@@ -6,8 +6,8 @@ export const ROUTES = {
   FORGOT_PASSWORD: "/forgot-password",
   DASHBOARD: "/dashboard",
   EXAMS: "/exams",
-  EXAM_START: "/exam/:examId",
-  EXAM_TAKE: "/exam/:examId/take/:attemptId",
+  EXAM_START: "/exam/:examId/start", // View exam info
+  EXAM_TAKE: "/exam/:examId/take/:attemptId", // Take the exam ← ADD THIS
   EXAM_RESULTS: "/exam/:examId/results/:attemptId",
   RESULTS: "/results",
   PROFILE: "/profile",

@@ -33,6 +33,7 @@ interface AuthState {
   updateProfile: (
     updates: Partial<UserProfile>,
   ) => Promise<{ error: Error | null }>;
+  refreshProfile: () => Promise<void>; // ADDED
   logout: () => Promise<void>;
   reset: () => void;
 }
@@ -111,6 +112,13 @@ export const useAuthStore = create<AuthState>()(
           console.error("Error in updateProfile:", err);
           return { error: err as Error };
         }
+      },
+
+      // ADDED: Refresh profile method
+      refreshProfile: async () => {
+        const { user } = get();
+        if (!user) return;
+        await get().fetchProfile(user.id);
       },
 
       logout: async () => {

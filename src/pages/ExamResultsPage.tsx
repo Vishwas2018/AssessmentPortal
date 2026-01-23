@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import {  
+import {
   Star,
   Clock,
   Target,
@@ -11,7 +11,7 @@ import {
   ChevronUp,
   RotateCcw,
   Home,
-  BookOpen,  
+  BookOpen,
   Loader2,
   AlertTriangle,
 } from "lucide-react";
@@ -206,12 +206,27 @@ export default function ExamResultsPage() {
 
   const gradeInfo = getGradeInfo(attempt.percentage);
   const answers = (attempt.answers as Record<string, string>) || {};
-  const correctCount = questions.filter(
-    (q) => answers[q.id] === q.correct_answer,
-  ).length;
-  const incorrectCount = questions.filter(
-    (q) => answers[q.id] && answers[q.id] !== q.correct_answer,
-  ).length;
+
+  const correctCount = questions.filter((q) => {
+    const userAnswer = answers[q.id];
+    if (!userAnswer || !q.correct_answer) return false;
+
+    const normalizedUser = userAnswer.trim().toUpperCase();
+    const normalizedCorrect = q.correct_answer.trim().toUpperCase();
+
+    return normalizedUser === normalizedCorrect;
+  }).length;
+
+  const incorrectCount = questions.filter((q) => {
+    const userAnswer = answers[q.id];
+    if (!userAnswer || !q.correct_answer) return false;
+
+    const normalizedUser = userAnswer.trim().toUpperCase();
+    const normalizedCorrect = q.correct_answer.trim().toUpperCase();
+
+    return normalizedUser !== normalizedCorrect;
+  }).length;
+
   const unansweredCount = questions.length - Object.keys(answers).length;
 
   return (
@@ -384,7 +399,11 @@ export default function ExamResultsPage() {
               >
                 {questions.map((question, index) => {
                   const userAnswer = answers[question.id];
-                  const isCorrect = userAnswer === question.correct_answer;
+                  // FIX: Proper comparison with normalization
+                  const isCorrect =
+                    userAnswer &&
+                    userAnswer.trim().toUpperCase() ===
+                      question.correct_answer.trim().toUpperCase();
                   const isExpanded = expandedQuestion === question.id;
 
                   return (
@@ -460,10 +479,14 @@ export default function ExamResultsPage() {
                                   question.options &&
                                   (question.options as string[]).map(
                                     (option, i) => {
+                                      const optionLetter = String.fromCharCode(
+                                        65 + i,
+                                      );
                                       const isUserAnswer =
-                                        option === userAnswer;
+                                        optionLetter === userAnswer;
                                       const isCorrectAnswer =
-                                        option === question.correct_answer;
+                                        optionLetter ===
+                                        question.correct_answer;
 
                                       return (
                                         <div
@@ -485,7 +508,7 @@ export default function ExamResultsPage() {
                                                   : "bg-gray-200 text-gray-600"
                                             }`}
                                           >
-                                            {String.fromCharCode(65 + i)}
+                                            {optionLetter}
                                           </span>
                                           <span className="font-medium text-gray-700 flex-1">
                                             {option}
