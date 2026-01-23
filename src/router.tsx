@@ -1,7 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import RootLayout from "./layouts/RootLayout";
-import ProtectedLayout from "./layouts/ProtectedLayout";
-import LandingPage from "./pages/LandingPage";
+import RootLayout from "./components/layout/RootLayout";
+import ProtectedLayout from "./components/layout/ProtectedLayout";
+import HomePage from "./pages/HomePage";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -19,7 +19,7 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <LandingPage />,
+        element: <HomePage />,
       },
       {
         path: "login",
@@ -44,7 +44,6 @@ export const router = createBrowserRouter([
             path: "exam/:examId/start",
             element: <ExamStartPage />,
           },
-          // CRITICAL: This route MUST have /take/:attemptId
           {
             path: "exam/:examId/take/:attemptId",
             element: <ExamPage />,

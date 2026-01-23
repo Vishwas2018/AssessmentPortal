@@ -12,7 +12,6 @@ import {
   Sparkles,
   Zap,
   Trophy,
-  Rocket,
   Clock,
   BookOpen,
 } from "lucide-react";
@@ -295,7 +294,7 @@ export default function ExamPage() {
     }
   };
 
-  // Submit exam - FIXED VERSION
+  // FIXED: Submit exam with ROBUST answer comparison and detailed logging
   const handleSubmit = async (isAutoSubmit = false) => {
     if (isSubmitting) return;
 
@@ -303,19 +302,112 @@ export default function ExamPage() {
     setShowSubmitModal(false);
 
     try {
-      // Calculate score
+      // Calculate score with ROBUST comparison
       let score = 0;
       let totalPoints = 0;
+
+      console.log("=== STARTING SCORE CALCULATION ===");
+      console.log("Total questions:", questions.length);
+      console.log("User answers:", answers);
 
       questions.forEach((q) => {
         const points = q.points || 1;
         totalPoints += points;
         const userAnswer = answers[q.id];
-        if (
-          userAnswer &&
-          userAnswer.toLowerCase() === q.correct_answer.toLowerCase()
-        ) {
-          score += points;
+
+        console.log(`\n--- Question ${q.question_number} ---`);
+        console.log("Question text:", q.question_text.substring(0, 50) + "...");
+        console.log("User answer:", userAnswer);
+        console.log("Correct answer in DB:", q.correct_answer);
+        console.log("Question type:", q.question_type);
+        console.log("Options:", q.options);
+
+        if (userAnswer && q.correct_answer) {
+          // Normalize both answers for comparison
+          const normalizedUserAnswer = userAnswer.trim().toUpperCase();
+          const normalizedCorrectAnswer = q.correct_answer.trim().toUpperCase();
+
+          console.log("Normalized user:", normalizedUserAnswer);
+          console.log("Normalized correct:", normalizedCorrectAnswer);
+
+          // ROBUST COMPARISON LOGIC:
+          let isCorrect = false;
+
+          // Method 1: Direct letter comparison (A, B, C, D)
+          if (normalizedUserAnswer === normalizedCorrectAnswer) {
+            isCorrect = true;
+            console.log("✓ CORRECT: Direct match (letter to letter)");
+          }
+          // Method 2: If DB has full text, compare against option text
+          else if (
+            q.question_type === "multiple_choice" &&
+            q.options &&
+            Array.isArray(q.options)
+          ) {
+            // Convert user's letter (A, B, C, D) to array index (0, 1, 2, 3)
+            const letterCode = normalizedUserAnswer.charCodeAt(0);
+            if (letterCode >= 65 && letterCode <= 90) {
+              // A-Z
+              const optionIndex = letterCode - 65; // A=0, B=1, C=2, D=3
+              const selectedOptionText = q.options[optionIndex];
+
+              console.log(
+                "Checking option index:",
+                optionIndex,
+                "Option text:",
+                selectedOptionText,
+              );
+
+              if (selectedOptionText) {
+                const normalizedOptionText = selectedOptionText
+                  .trim()
+                  .toUpperCase();
+                console.log("Normalized option text:", normalizedOptionText);
+
+                if (normalizedOptionText === normalizedCorrectAnswer) {
+                  isCorrect = true;
+                  console.log(
+                    "✓ CORRECT: Option text matches DB correct answer",
+                  );
+                  console.log(
+                    `  User selected: ${userAnswer} (${selectedOptionText})`,
+                  );
+                  console.log(`  DB has: ${q.correct_answer}`);
+                } else {
+                  console.log("✗ No match between option text and DB answer");
+                  console.log(`  Option text: "${normalizedOptionText}"`);
+                  console.log(`  DB answer: "${normalizedCorrectAnswer}"`);
+                }
+              } else {
+                console.log("⚠ Warning: Option index out of range");
+              }
+            } else {
+              console.log("⚠ Warning: User answer is not a valid letter (A-Z)");
+            }
+          }
+          // Method 3: True/False comparison
+          else if (q.question_type === "true_false") {
+            const normalizedUser = normalizedUserAnswer.replace(/\s/g, "");
+            const normalizedCorrect = normalizedCorrectAnswer.replace(
+              /\s/g,
+              "",
+            );
+            if (normalizedUser === normalizedCorrect) {
+              isCorrect = true;
+              console.log("✓ CORRECT: True/False match");
+            }
+          }
+
+          if (isCorrect) {
+            score += points;
+            console.log(
+              `✓ Adding ${points} points. New score: ${score}/${totalPoints}`,
+            );
+          } else {
+            console.log("✗ INCORRECT: No match found");
+          }
+        } else {
+          console.log("⚠ Skipped: No answer or no correct answer defined");
         }
       });
 
@@ -323,12 +415,10 @@ export default function ExamPage() {
         totalPoints > 0 ? Math.round((score / totalPoints) * 100) : 0;
       const timeSpent = exam ? totalTime - timeRemaining : 0;
 
-      console.log("Submitting exam:", {
-        score,
-        totalPoints,
-        percentage,
-        timeSpent,
-      });
+      console.log("\n=== FINAL RESULTS ===");
+      console.log("Score:", score, "/", totalPoints);
+      console.log("Percentage:", percentage, "%");
+      console.log("Time Spent:", timeSpent, "seconds");
 
       // Update attempt in database
       const { data, error: updateError } = await supabase
