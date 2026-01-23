@@ -1,212 +1,226 @@
-// Zustand stores for state management
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { supabase } from "@/lib/supabase";
-import { signOut as authSignOut, getUserProfile } from "@/lib/auth";
-import type { UserProfile } from "@/types/supabase";
 import type { User, Session } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 
-// ============================================
-// AUTH STORE
-// ============================================
+// Types
+interface UserProfile {
+  id: string;
+  email: string;
+  full_name?: string;
+  display_name?: string;
+  avatar_url?: string;
+  year_level?: number;
+  school_name?: string;
+  parent_email?: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 interface AuthState {
   user: User | null;
   session: Session | null;
   profile: UserProfile | null;
+  isAuthenticated: boolean;
   isLoading: boolean;
-  isInitialized: boolean;
 
   // Actions
   setUser: (user: User | null) => void;
   setSession: (session: Session | null) => void;
   setProfile: (profile: UserProfile | null) => void;
   setLoading: (loading: boolean) => void;
-  initialize: () => Promise<void>;
+  fetchProfile: (userId: string) => Promise<void>;
+  updateProfile: (
+    updates: Partial<UserProfile>,
+  ) => Promise<{ error: Error | null }>;
   logout: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  reset: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set, get) => ({
-  user: null,
-  session: null,
-  profile: null,
-  isLoading: true,
-  isInitialized: false,
-
-  setUser: (user) => set({ user }),
-  setSession: (session) => set({ session }),
-  setProfile: (profile) => set({ profile }),
-  setLoading: (isLoading) => set({ isLoading }),
-
-  initialize: async () => {
-    try {
-      // Get current session
-      const {
-        data: { session },
-        error,
-      } = await supabase.auth.getSession();
-
-      if (error) {
-        console.error("Session error:", error);
-        set({
-          user: null,
-          session: null,
-          profile: null,
-          isLoading: false,
-          isInitialized: true,
-        });
-        return;
-      }
-
-      if (session?.user) {
-        // Fetch user profile
-        const profile = await getUserProfile(session.user.id);
-        set({
-          user: session.user,
-          session,
-          profile,
-          isLoading: false,
-          isInitialized: true,
-        });
-      } else {
-        set({
-          user: null,
-          session: null,
-          profile: null,
-          isLoading: false,
-          isInitialized: true,
-        });
-      }
-
-      // Listen for auth changes
-      supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log("Auth state changed:", event);
-
-        if (event === "SIGNED_IN" && session?.user) {
-          const profile = await getUserProfile(session.user.id);
-          set({ user: session.user, session, profile });
-        } else if (event === "SIGNED_OUT") {
-          set({ user: null, session: null, profile: null });
-        } else if (event === "TOKEN_REFRESHED" && session) {
-          set({ session });
-        } else if (event === "USER_UPDATED" && session?.user) {
-          const profile = await getUserProfile(session.user.id);
-          set({ user: session.user, profile });
-        }
-      });
-    } catch (err) {
-      console.error("Initialize error:", err);
-      set({
-        user: null,
-        session: null,
-        profile: null,
-        isLoading: false,
-        isInitialized: true,
-      });
-    }
-  },
-
-  logout: async () => {
-    set({ isLoading: true });
-    await authSignOut();
-    set({ user: null, session: null, profile: null, isLoading: false });
-  },
-
-  refreshProfile: async () => {
-    const { user } = get();
-    if (user) {
-      const profile = await getUserProfile(user.id);
-      set({ profile });
-    }
-  },
-}));
-
-// ============================================
-// EXAM STORE
-// ============================================
-
-interface ExamState {
-  currentExamId: string | null;
-  answers: Record<string, string>;
-  timeRemaining: number;
-  isSubmitting: boolean;
-
-  // Actions
-  setCurrentExam: (examId: string | null) => void;
-  setAnswer: (questionId: string, answer: string) => void;
-  clearAnswers: () => void;
-  setTimeRemaining: (time: number) => void;
-  setSubmitting: (submitting: boolean) => void;
-}
-
-export const useExamStore = create<ExamState>((set) => ({
-  currentExamId: null,
-  answers: {},
-  timeRemaining: 0,
-  isSubmitting: false,
-
-  setCurrentExam: (examId) => set({ currentExamId: examId, answers: {} }),
-  setAnswer: (questionId, answer) =>
-    set((state) => ({ answers: { ...state.answers, [questionId]: answer } })),
-  clearAnswers: () => set({ answers: {}, currentExamId: null }),
-  setTimeRemaining: (time) => set({ timeRemaining: time }),
-  setSubmitting: (submitting) => set({ isSubmitting: submitting }),
-}));
-
-// ============================================
-// UI STORE
-// ============================================
-
-interface UIState {
-  sidebarOpen: boolean;
-  theme: "light" | "dark";
-  notifications: Notification[];
-
-  // Actions
-  toggleSidebar: () => void;
-  setSidebarOpen: (open: boolean) => void;
-  setTheme: (theme: "light" | "dark") => void;
-  addNotification: (notification: Omit<Notification, "id">) => void;
-  removeNotification: (id: string) => void;
-}
-
-interface Notification {
-  id: string;
-  type: "success" | "error" | "info" | "warning";
-  message: string;
-  duration?: number;
-}
-
-export const useUIStore = create<UIState>()(
+export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
-      sidebarOpen: true,
-      theme: "light",
-      notifications: [],
+    (set, get) => ({
+      user: null,
+      session: null,
+      profile: null,
+      isAuthenticated: false,
+      isLoading: true,
 
-      toggleSidebar: () =>
-        set((state) => ({ sidebarOpen: !state.sidebarOpen })),
-      setSidebarOpen: (open) => set({ sidebarOpen: open }),
-      setTheme: (theme) => set({ theme }),
-      addNotification: (notification) =>
-        set((state) => ({
-          notifications: [
-            ...state.notifications,
-            { ...notification, id: Date.now().toString() },
-          ],
-        })),
-      removeNotification: (id) =>
-        set((state) => ({
-          notifications: state.notifications.filter((n) => n.id !== id),
-        })),
+      setUser: (user) =>
+        set({
+          user,
+          isAuthenticated: !!user,
+        }),
+
+      setSession: (session) => set({ session }),
+
+      setProfile: (profile) => set({ profile }),
+
+      setLoading: (isLoading) => set({ isLoading }),
+
+      fetchProfile: async (userId: string) => {
+        try {
+          const { data, error } = await supabase
+            .from("user_profiles")
+            .select("*")
+            .eq("id", userId)
+            .single();
+
+          if (error) {
+            // Profile might not exist yet for new users
+            if (error.code === "PGRST116") {
+              console.log("Profile not found, user may be new");
+              return;
+            }
+            console.error("Error fetching profile:", error);
+            return;
+          }
+
+          set({ profile: data });
+        } catch (err) {
+          console.error("Error in fetchProfile:", err);
+        }
+      },
+
+      updateProfile: async (updates: Partial<UserProfile>) => {
+        const { user } = get();
+        if (!user) return { error: new Error("No user logged in") };
+
+        try {
+          const { error } = await supabase
+            .from("user_profiles")
+            .update({
+              ...updates,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+
+          if (error) {
+            console.error("Error updating profile:", error);
+            return { error };
+          }
+
+          // Update local state
+          const currentProfile = get().profile;
+          set({
+            profile: currentProfile ? { ...currentProfile, ...updates } : null,
+          });
+
+          return { error: null };
+        } catch (err) {
+          console.error("Error in updateProfile:", err);
+          return { error: err as Error };
+        }
+      },
+
+      logout: async () => {
+        try {
+          await supabase.auth.signOut();
+          set({
+            user: null,
+            session: null,
+            profile: null,
+            isAuthenticated: false,
+          });
+        } catch (err) {
+          console.error("Error logging out:", err);
+        }
+      },
+
+      reset: () =>
+        set({
+          user: null,
+          session: null,
+          profile: null,
+          isAuthenticated: false,
+          isLoading: false,
+        }),
     }),
     {
-      name: "eduassess-ui",
+      name: "auth-storage",
       partialize: (state) => ({
-        theme: state.theme,
-        sidebarOpen: state.sidebarOpen,
+        // Only persist these fields
+        user: state.user,
+        profile: state.profile,
+        isAuthenticated: state.isAuthenticated,
       }),
     },
   ),
 );
+
+// ============================================
+// UI Store (for global UI state)
+// ============================================
+interface UIState {
+  sidebarOpen: boolean;
+  theme: "light" | "dark";
+  toggleSidebar: () => void;
+  setTheme: (theme: "light" | "dark") => void;
+}
+
+export const useUIStore = create<UIState>((set) => ({
+  sidebarOpen: false,
+  theme: "light",
+  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+  setTheme: (theme) => set({ theme }),
+}));
+
+// ============================================
+// Exam Store (for exam-taking state)
+// ============================================
+interface ExamState {
+  currentExamId: string | null;
+  currentAttemptId: string | null;
+  answers: Record<string, string>;
+  flaggedQuestions: Set<string>;
+  timeRemaining: number;
+
+  setCurrentExam: (examId: string, attemptId: string) => void;
+  setAnswer: (questionId: string, answer: string) => void;
+  toggleFlag: (questionId: string) => void;
+  setTimeRemaining: (time: number) => void;
+  resetExam: () => void;
+}
+
+export const useExamStore = create<ExamState>((set) => ({
+  currentExamId: null,
+  currentAttemptId: null,
+  answers: {},
+  flaggedQuestions: new Set(),
+  timeRemaining: 0,
+
+  setCurrentExam: (examId, attemptId) =>
+    set({
+      currentExamId: examId,
+      currentAttemptId: attemptId,
+      answers: {},
+      flaggedQuestions: new Set(),
+    }),
+
+  setAnswer: (questionId, answer) =>
+    set((state) => ({
+      answers: { ...state.answers, [questionId]: answer },
+    })),
+
+  toggleFlag: (questionId) =>
+    set((state) => {
+      const newFlagged = new Set(state.flaggedQuestions);
+      if (newFlagged.has(questionId)) {
+        newFlagged.delete(questionId);
+      } else {
+        newFlagged.add(questionId);
+      }
+      return { flaggedQuestions: newFlagged };
+    }),
+
+  setTimeRemaining: (time) => set({ timeRemaining: time }),
+
+  resetExam: () =>
+    set({
+      currentExamId: null,
+      currentAttemptId: null,
+      answers: {},
+      flaggedQuestions: new Set(),
+      timeRemaining: 0,
+    }),
+}));

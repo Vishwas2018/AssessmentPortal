@@ -1,18 +1,112 @@
-import { Outlet } from "react-router-dom";
-import { useEffect } from "react";
-import { useAuthStore } from "@/store";
+import { useEffect, useState } from 'react';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/store';
+import { ROUTES } from '@/data/constants';
 
 export default function RootLayout() {
-  const setUser = useAuthStore((state) => state.setUser);
-  const setLoading = useAuthStore((state) => state.setLoading);
+  const [isLoading, setIsLoading] = useState(true);
+  const { setUser, setSession, setProfile, fetchProfile } = useAuthStore();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
-    // Initialize auth state
-    setLoading(false);
-  }, [setUser, setLoading]);
+    let mounted = true;
+
+    // Check initial session
+    const initializeAuth = async () => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Session error:', error);
+        }
+
+        if (mounted) {
+          if (session?.user) {
+            setUser(session.user);
+            setSession(session);
+            // Fetch profile in background, don't block
+            fetchProfile(session.user.id).catch(console.error);
+          } else {
+            setUser(null);
+            setSession(null);
+            setProfile(null);
+          }
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error('Auth initialization error:', err);
+        if (mounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    initializeAuth();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        console.log('Auth state changed:', event);
+        
+        if (mounted) {
+          if (session?.user) {
+            setUser(session.user);
+            setSession(session);
+            fetchProfile(session.user.id).catch(console.error);
+            
+            // Redirect to dashboard after login
+            if (event === 'SIGNED_IN') {
+              const publicPaths = [ROUTES.HOME, ROUTES.LOGIN, ROUTES.REGISTER, ROUTES.FORGOT_PASSWORD];
+              if (publicPaths.includes(location.pathname)) {
+                navigate(ROUTES.DASHBOARD, { replace: true });
+              }
+            }
+          } else {
+            setUser(null);
+            setSession(null);
+            setProfile(null);
+            
+            // Redirect to home after logout
+            if (event === 'SIGNED_OUT') {
+              navigate(ROUTES.HOME, { replace: true });
+            }
+          }
+        }
+      }
+    );
+
+    // Cleanup
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  // Show loading spinner
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="text-center"
+        >
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            className="w-16 h-16 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"
+          />
+          <p className="text-white text-xl font-bold">Loading...</p>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen bg-gray-50">
       <Outlet />
     </div>
   );
