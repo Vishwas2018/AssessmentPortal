@@ -1,13 +1,14 @@
-import { useEffect, useState } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { supabase } from '@/lib/supabase';
-import { useAuthStore } from '@/store';
-import { ROUTES } from '@/data/constants';
+import { useEffect, useState } from "react";
+import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { motion } from "framer-motion";
+import { supabase } from "@/lib/supabase";
+import { useAuthStore } from "@/store";
+import { ROUTES } from "@/data/constants";
 
 export default function RootLayout() {
-  const [isLoading, setIsLoading] = useState(true);
-  const { setUser, setSession, setProfile, fetchProfile } = useAuthStore();
+  const [isInitializing, setIsInitializing] = useState(true);
+  const { setUser, setSession, setProfile, setLoading, fetchProfile } =
+    useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -17,10 +18,13 @@ export default function RootLayout() {
     // Check initial session
     const initializeAuth = async () => {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+
         if (error) {
-          console.error('Session error:', error);
+          console.error("Session error:", error);
         }
 
         if (mounted) {
@@ -34,12 +38,15 @@ export default function RootLayout() {
             setSession(null);
             setProfile(null);
           }
-          setIsLoading(false);
+          // Update both local and store loading states
+          setIsInitializing(false);
+          setLoading(false);
         }
       } catch (err) {
-        console.error('Auth initialization error:', err);
+        console.error("Auth initialization error:", err);
         if (mounted) {
-          setIsLoading(false);
+          setIsInitializing(false);
+          setLoading(false);
         }
       }
     };
@@ -47,36 +54,41 @@ export default function RootLayout() {
     initializeAuth();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        console.log('Auth state changed:', event);
-        
-        if (mounted) {
-          if (session?.user) {
-            setUser(session.user);
-            setSession(session);
-            fetchProfile(session.user.id).catch(console.error);
-            
-            // Redirect to dashboard after login
-            if (event === 'SIGNED_IN') {
-              const publicPaths = [ROUTES.HOME, ROUTES.LOGIN, ROUTES.REGISTER, ROUTES.FORGOT_PASSWORD];
-              if (publicPaths.includes(location.pathname)) {
-                navigate(ROUTES.DASHBOARD, { replace: true });
-              }
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state changed:", event);
+
+      if (mounted) {
+        if (session?.user) {
+          setUser(session.user);
+          setSession(session);
+          fetchProfile(session.user.id).catch(console.error);
+
+          // Redirect to dashboard after login
+          if (event === "SIGNED_IN") {
+            const publicPaths = [
+              ROUTES.HOME,
+              ROUTES.LOGIN,
+              ROUTES.REGISTER,
+              ROUTES.FORGOT_PASSWORD,
+            ];
+            if (publicPaths.includes(location.pathname)) {
+              navigate(ROUTES.DASHBOARD, { replace: true });
             }
-          } else {
-            setUser(null);
-            setSession(null);
-            setProfile(null);
-            
-            // Redirect to home after logout
-            if (event === 'SIGNED_OUT') {
-              navigate(ROUTES.HOME, { replace: true });
-            }
+          }
+        } else {
+          setUser(null);
+          setSession(null);
+          setProfile(null);
+
+          // Redirect to home after logout
+          if (event === "SIGNED_OUT") {
+            navigate(ROUTES.HOME, { replace: true });
           }
         }
       }
-    );
+    });
 
     // Cleanup
     return () => {
@@ -85,8 +97,8 @@ export default function RootLayout() {
     };
   }, []);
 
-  // Show loading spinner
-  if (isLoading) {
+  // Show loading spinner during initialization
+  if (isInitializing) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center">
         <motion.div
@@ -96,7 +108,7 @@ export default function RootLayout() {
         >
           <motion.div
             animate={{ rotate: 360 }}
-            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
             className="w-16 h-16 border-4 border-white border-t-transparent rounded-full mx-auto mb-4"
           />
           <p className="text-white text-xl font-bold">Loading...</p>

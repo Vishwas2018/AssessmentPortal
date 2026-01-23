@@ -1,79 +1,39 @@
-// Protected layout - redirects to login if not authenticated
-import { useEffect, useState } from "react";
-import { Outlet, useNavigate, useLocation } from "react-router-dom";
+import { useEffect } from "react";
+import { Outlet, Navigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
-import { ROUTES } from "@/data/constants";
 import { useAuthStore } from "@/store";
+import { ROUTES } from "@/data/constants";
 import Navbar from "./Navbar";
 
 export default function ProtectedLayout() {
-  const navigate = useNavigate();
   const location = useLocation();
-  const { user, isLoading, isInitialized, initialize } = useAuthStore();
-  const [isChecking, setIsChecking] = useState(true);
+  const { user, isLoading } = useAuthStore();
 
-  useEffect(() => {
-    // Initialize auth on mount
-    const initAuth = async () => {
-      if (!isInitialized) {
-        await initialize();
-      }
-      setIsChecking(false);
-    };
-
-    initAuth();
-  }, [isInitialized, initialize]);
-
-  useEffect(() => {
-    // Redirect to login if not authenticated (after initialization is complete)
-    if (!isChecking && isInitialized && !isLoading && !user) {
-      navigate(ROUTES.LOGIN, {
-        replace: true,
-        state: { from: location.pathname },
-      });
-    }
-  }, [user, isLoading, isInitialized, isChecking, navigate, location]);
-
-  // Show loading spinner while checking auth
-  if (isChecking || !isInitialized || isLoading) {
+  // Show loading while checking auth
+  if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className="text-center"
         >
-          <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto mb-4" />
-          <p className="text-xl font-bold text-gray-600">
-            Loading your dashboard...
-          </p>
+          <Loader2 className="w-12 h-12 text-white animate-spin mx-auto mb-4" />
+          <p className="text-white text-xl font-bold">Loading...</p>
         </motion.div>
       </div>
     );
   }
 
-  // Don't render anything if not authenticated (will redirect)
+  // Redirect to login if not authenticated
   if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
-        >
-          <Loader2 className="w-12 h-12 text-primary-500 animate-spin mx-auto mb-4" />
-          <p className="text-xl font-bold text-gray-600">
-            Redirecting to login...
-          </p>
-        </motion.div>
-      </div>
-    );
+    return <Navigate to={ROUTES.LOGIN} state={{ from: location }} replace />;
   }
 
-  // Render protected content
+  // Render protected content with Navbar
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
+    <div className="min-h-screen bg-gray-50">
       <Navbar />
       <main>
         <Outlet />
