@@ -2,25 +2,346 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Star,
+  Trophy,
   Clock,
   Target,
   CheckCircle2,
   XCircle,
+  MinusCircle,
   ChevronDown,
   ChevronUp,
-  RotateCcw,
   Home,
-  BookOpen,
+  RotateCcw,
+  FileText,
+  Star,
   Loader2,
-  AlertTriangle,
+  Filter,
+  Award,
+  TrendingUp,
+  BookOpen,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store";
-import { ROUTES } from "@/data/constants";
-import type { Question, ExamAttempt, Exam } from "@/types/supabase";
-import confetti from "canvas-confetti";
 
+// Types
+interface Question {
+  id: string;
+  question_number: number;
+  question_text: string;
+  question_type: string;
+  options: string[];
+  correct_answer: string;
+  explanation: string;
+  points: number;
+  image_url?: string;
+  topic?: string;
+}
+
+interface ExamAttempt {
+  id: string;
+  exam_id: string;
+  user_id: string;
+  status: string;
+  started_at: string;
+  completed_at: string;
+  answers: Record<string, string>;
+  score: number;
+  total_points: number;
+  percentage: number;
+  time_spent_seconds: number;
+}
+
+interface Exam {
+  id: string;
+  title: string;
+  subject: string;
+  duration_minutes: number;
+  total_questions: number;
+}
+
+type FilterType = "all" | "correct" | "incorrect" | "unanswered";
+
+// Helper functions
+function cleanQuestionText(text: string): string {
+  return text
+    .replace(/\*\*/g, "")
+    .replace(/\\n/g, " ")
+    .replace(/---/g, "\n\n")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}m ${secs}s`;
+}
+
+function getGrade(percentage: number): {
+  grade: string;
+  color: string;
+  emoji: string;
+} {
+  if (percentage >= 90)
+    return { grade: "A+", color: "text-green-600", emoji: "🌟" };
+  if (percentage >= 80)
+    return { grade: "A", color: "text-green-500", emoji: "⭐" };
+  if (percentage >= 70)
+    return { grade: "B", color: "text-blue-500", emoji: "👍" };
+  if (percentage >= 60)
+    return { grade: "C", color: "text-yellow-500", emoji: "📚" };
+  if (percentage >= 50)
+    return { grade: "D", color: "text-orange-500", emoji: "💪" };
+  return { grade: "F", color: "text-red-500", emoji: "📖" };
+}
+
+function getEncouragement(percentage: number): string {
+  if (percentage >= 90) return "Outstanding! You're a superstar! 🌟";
+  if (percentage >= 80) return "Excellent work! Keep it up! 🎉";
+  if (percentage >= 70) return "Good job! You're doing great! 👏";
+  if (percentage >= 60) return "Nice effort! Keep practicing! 💪";
+  if (percentage >= 50) return "You're getting there! Don't give up! 🚀";
+  return "Keep trying! Practice makes perfect! 📚";
+}
+
+// Question Result Card Component
+interface QuestionCardProps {
+  question: Question;
+  userAnswer: string | undefined;
+  isExpanded: boolean;
+  onToggle: () => void;
+  questionIndex: number;
+}
+
+function QuestionCard({
+  question,
+  userAnswer,
+  isExpanded,
+  onToggle,
+  questionIndex,
+}: QuestionCardProps) {
+  const getAnswerStatus = () => {
+    if (!userAnswer) return "unanswered";
+
+    const normalizedUser = userAnswer.trim().toUpperCase();
+    const normalizedCorrect = question.correct_answer.trim().toUpperCase();
+
+    // Direct comparison
+    if (normalizedUser === normalizedCorrect) return "correct";
+
+    // MCQ: Compare option text
+    if (question.options && Array.isArray(question.options)) {
+      const letterCode = normalizedUser.charCodeAt(0);
+      if (letterCode >= 65 && letterCode <= 90) {
+        const optionIndex = letterCode - 65;
+        const selectedOptionText = question.options[optionIndex];
+        if (selectedOptionText) {
+          const normalizedOptionText = selectedOptionText.trim().toUpperCase();
+          if (normalizedOptionText === normalizedCorrect) return "correct";
+        }
+      }
+    }
+
+    return "incorrect";
+  };
+
+  const status = getAnswerStatus();
+  const statusConfig = {
+    correct: {
+      bg: "bg-green-50",
+      border: "border-green-200",
+      icon: <CheckCircle2 className="w-5 h-5 text-green-500" />,
+      badge: "bg-green-100 text-green-700",
+      label: "Correct",
+    },
+    incorrect: {
+      bg: "bg-red-50",
+      border: "border-red-200",
+      icon: <XCircle className="w-5 h-5 text-red-500" />,
+      badge: "bg-red-100 text-red-700",
+      label: "Incorrect",
+    },
+    unanswered: {
+      bg: "bg-yellow-50",
+      border: "border-yellow-200",
+      icon: <MinusCircle className="w-5 h-5 text-yellow-500" />,
+      badge: "bg-yellow-100 text-yellow-700",
+      label: "Unanswered",
+    },
+  };
+
+  const config = statusConfig[status];
+
+  // Get the correct answer text
+  const getCorrectAnswerText = () => {
+    const correct = question.correct_answer.trim().toUpperCase();
+    // If correct answer is a letter (A, B, C, D), get the option text
+    if (
+      correct.length === 1 &&
+      correct >= "A" &&
+      correct <= "Z" &&
+      question.options
+    ) {
+      const idx = correct.charCodeAt(0) - 65;
+      return question.options[idx] || question.correct_answer;
+    }
+    return question.correct_answer;
+  };
+
+  // Get user answer text
+  const getUserAnswerText = () => {
+    if (!userAnswer) return "Not answered";
+    const answer = userAnswer.trim().toUpperCase();
+    if (
+      answer.length === 1 &&
+      answer >= "A" &&
+      answer <= "Z" &&
+      question.options
+    ) {
+      const idx = answer.charCodeAt(0) - 65;
+      return question.options[idx] || userAnswer;
+    }
+    return userAnswer;
+  };
+
+  return (
+    <motion.div
+      layout
+      className={`rounded-2xl border-2 overflow-hidden ${config.border} ${config.bg}`}
+    >
+      {/* Question Header - Clickable */}
+      <button
+        onClick={onToggle}
+        className="w-full p-4 flex items-center justify-between text-left hover:bg-white/50 transition-colors"
+      >
+        <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center gap-3">
+            <span className="font-bold text-gray-500">
+              {questionIndex + 1}.
+            </span>
+            <span className="text-gray-800 font-medium line-clamp-1">
+              {cleanQuestionText(question.question_text)}
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span
+            className={`px-3 py-1 rounded-full text-sm font-medium ${config.badge}`}
+          >
+            {config.label}
+          </span>
+          {isExpanded ? (
+            <ChevronUp className="w-5 h-5 text-gray-400" />
+          ) : (
+            <ChevronDown className="w-5 h-5 text-gray-400" />
+          )}
+        </div>
+      </button>
+
+      {/* Expanded Content */}
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 space-y-4">
+              {/* Question Text */}
+              <div className="bg-white rounded-xl p-4 border border-gray-200">
+                <h4 className="font-semibold text-gray-800 mb-3">
+                  {cleanQuestionText(question.question_text)}
+                </h4>
+
+                {/* Question Image */}
+                {question.image_url && (
+                  <div className="mb-4 rounded-lg overflow-hidden border border-gray-200">
+                    <img
+                      src={question.image_url}
+                      alt="Question"
+                      className="max-h-48 object-contain mx-auto"
+                    />
+                  </div>
+                )}
+
+                {/* Options */}
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-500">Options:</p>
+                  {question.options?.map((option, idx) => {
+                    const letter = String.fromCharCode(65 + idx);
+                    const isCorrect =
+                      letter === question.correct_answer.trim().toUpperCase() ||
+                      option.trim().toUpperCase() ===
+                        question.correct_answer.trim().toUpperCase();
+                    const isUserAnswer =
+                      userAnswer?.trim().toUpperCase() === letter;
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`p-3 rounded-lg flex items-center gap-3 ${
+                          isCorrect
+                            ? "bg-green-100 border-2 border-green-300"
+                            : isUserAnswer && !isCorrect
+                              ? "bg-red-100 border-2 border-red-300"
+                              : "bg-gray-50 border border-gray-200"
+                        }`}
+                      >
+                        <span className="text-gray-700">{option}</span>
+                        {isCorrect && (
+                          <span className="ml-auto px-2 py-0.5 bg-green-500 text-white text-xs font-medium rounded">
+                            Correct Answer
+                          </span>
+                        )}
+                        {isUserAnswer && !isCorrect && (
+                          <span className="ml-auto px-2 py-0.5 bg-red-500 text-white text-xs font-medium rounded">
+                            Your Answer
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Answer Summary */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl p-4 border border-gray-200">
+                  <p className="text-sm text-gray-500 mb-1">Your Answer:</p>
+                  <p
+                    className={`font-medium ${status === "unanswered" ? "text-gray-400 italic" : "text-gray-800"}`}
+                  >
+                    {getUserAnswerText()}
+                  </p>
+                </div>
+                <div className="bg-green-100 rounded-xl p-4 border border-green-200">
+                  <p className="text-sm text-green-700 mb-1">Correct Answer:</p>
+                  <p className="font-medium text-green-800">
+                    {getCorrectAnswerText()}
+                  </p>
+                </div>
+              </div>
+
+              {/* Explanation */}
+              {question.explanation && (
+                <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                  <p className="text-sm font-medium text-blue-800 mb-1">
+                    Explanation:
+                  </p>
+                  <p className="text-blue-700">{question.explanation}</p>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+// Main Component
 export default function ExamResultsPage() {
   const { examId, attemptId } = useParams<{
     examId: string;
@@ -29,19 +350,23 @@ export default function ExamResultsPage() {
   const navigate = useNavigate();
   const { user } = useAuthStore();
 
+  // State
   const [exam, setExam] = useState<Exam | null>(null);
   const [attempt, setAttempt] = useState<ExamAttempt | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedQuestion, setExpandedQuestion] = useState<string | null>(null);
-  const [showReview, setShowReview] = useState(false);
+  const [activeTab, setActiveTab] = useState<"summary" | "review">("summary");
+  const [filter, setFilter] = useState<FilterType>("all");
+  const [expandedQuestions, setExpandedQuestions] = useState<Set<string>>(
+    new Set(),
+  );
 
-  // Fetch results data
+  // Fetch data
   useEffect(() => {
     async function fetchResults() {
       if (!examId || !attemptId || !user) {
-        setError("Results not found");
+        setError("Invalid results page");
         setIsLoading(false);
         return;
       }
@@ -54,12 +379,7 @@ export default function ExamResultsPage() {
           .eq("id", examId)
           .single();
 
-        if (examError || !examData) {
-          setError("Exam not found");
-          setIsLoading(false);
-          return;
-        }
-
+        if (examError) throw examError;
         setExam(examData);
 
         // Fetch attempt
@@ -67,15 +387,9 @@ export default function ExamResultsPage() {
           .from("exam_attempts")
           .select("*")
           .eq("id", attemptId)
-          .eq("user_id", user.id)
           .single();
 
-        if (attemptError || !attemptData) {
-          setError("Results not found");
-          setIsLoading(false);
-          return;
-        }
-
+        if (attemptError) throw attemptError;
         setAttempt(attemptData);
 
         // Fetch questions
@@ -85,22 +399,10 @@ export default function ExamResultsPage() {
           .eq("exam_id", examId)
           .order("question_number", { ascending: true });
 
-        if (!questionsError) {
-          setQuestions(questionsData || []);
-        }
+        if (questionsError) throw questionsError;
+        setQuestions(questionsData || []);
 
         setIsLoading(false);
-
-        // Trigger confetti for good scores
-        if (attemptData.percentage && attemptData.percentage >= 70) {
-          setTimeout(() => {
-            confetti({
-              particleCount: 100,
-              spread: 70,
-              origin: { y: 0.6 },
-            });
-          }, 500);
-        }
       } catch (err) {
         console.error("Error fetching results:", err);
         setError("Failed to load results");
@@ -111,70 +413,72 @@ export default function ExamResultsPage() {
     fetchResults();
   }, [examId, attemptId, user]);
 
-  // Format time
-  const formatTime = (seconds: number | null) => {
-    if (!seconds) return "0:00";
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  // Calculate statistics
+  const getQuestionStatus = (question: Question) => {
+    if (!attempt) return "unanswered";
+    const userAnswer = attempt.answers[question.id];
+    if (!userAnswer) return "unanswered";
+
+    const normalizedUser = userAnswer.trim().toUpperCase();
+    const normalizedCorrect = question.correct_answer.trim().toUpperCase();
+
+    if (normalizedUser === normalizedCorrect) return "correct";
+
+    if (question.options && Array.isArray(question.options)) {
+      const letterCode = normalizedUser.charCodeAt(0);
+      if (letterCode >= 65 && letterCode <= 90) {
+        const optionIndex = letterCode - 65;
+        const selectedOptionText = question.options[optionIndex];
+        if (selectedOptionText) {
+          const normalizedOptionText = selectedOptionText.trim().toUpperCase();
+          if (normalizedOptionText === normalizedCorrect) return "correct";
+        }
+      }
+    }
+
+    return "incorrect";
   };
 
-  // Get grade info
-  const getGradeInfo = (percentage: number | null) => {
-    if (!percentage)
-      return {
-        emoji: "📚",
-        text: "Keep Practicing!",
-        color: "from-gray-400 to-gray-500",
-        message: "Don't give up!",
-      };
-    if (percentage >= 90)
-      return {
-        emoji: "🌟",
-        text: "Outstanding!",
-        color: "from-yellow-400 to-orange-400",
-        message: "You're a superstar!",
-      };
-    if (percentage >= 80)
-      return {
-        emoji: "🎉",
-        text: "Excellent!",
-        color: "from-green-400 to-emerald-400",
-        message: "Amazing work!",
-      };
-    if (percentage >= 70)
-      return {
-        emoji: "👍",
-        text: "Great Job!",
-        color: "from-blue-400 to-cyan-400",
-        message: "Well done!",
-      };
-    if (percentage >= 60)
-      return {
-        emoji: "💪",
-        text: "Good Effort!",
-        color: "from-purple-400 to-pink-400",
-        message: "Keep it up!",
-      };
-    return {
-      emoji: "📚",
-      text: "Keep Practicing!",
-      color: "from-orange-400 to-red-400",
-      message: "You'll do better next time!",
-    };
+  const stats = {
+    correct: questions.filter((q) => getQuestionStatus(q) === "correct").length,
+    incorrect: questions.filter((q) => getQuestionStatus(q) === "incorrect")
+      .length,
+    unanswered: questions.filter((q) => getQuestionStatus(q) === "unanswered")
+      .length,
+  };
+
+  // Filter questions
+  const filteredQuestions = questions.filter((q) => {
+    if (filter === "all") return true;
+    return getQuestionStatus(q) === filter;
+  });
+
+  // Toggle question expansion
+  const toggleQuestion = (questionId: string) => {
+    setExpandedQuestions((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(questionId)) {
+        newSet.delete(questionId);
+      } else {
+        newSet.add(questionId);
+      }
+      return newSet;
+    });
   };
 
   // Loading state
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
           className="text-center"
         >
-          <Loader2 className="w-16 h-16 text-primary-500 animate-spin mx-auto mb-4" />
-          <p className="text-2xl font-bold text-gray-600">Loading results...</p>
+          <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-4" />
+          <p className="text-xl font-semibold text-gray-700">
+            Loading your results...
+          </p>
         </motion.div>
       </div>
     );
@@ -183,453 +487,297 @@ export default function ExamResultsPage() {
   // Error state
   if (error || !exam || !attempt) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-3xl p-8 shadow-xl text-center max-w-md"
-        >
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertTriangle className="w-8 h-8 text-red-500" />
-          </div>
-          <h1 className="text-2xl font-black text-gray-800 mb-2">Oops!</h1>
-          <p className="text-gray-600 mb-6">{error || "Results not found"}</p>
-          <Link to={ROUTES.EXAMS}>
-            <button className="px-6 py-3 bg-primary-500 text-white rounded-xl font-bold hover:bg-primary-600 transition-colors">
-              Back to Exams
-            </button>
-          </Link>
-        </motion.div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
+          <div className="text-6xl mb-4">😕</div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Oops!</h2>
+          <p className="text-gray-600 mb-6">
+            {error || "Unable to load results"}
+          </p>
+          <button
+            onClick={() => navigate("/exams")}
+            className="px-6 py-3 bg-indigo-500 text-white rounded-xl font-semibold hover:bg-indigo-600"
+          >
+            Back to Exams
+          </button>
+        </div>
       </div>
     );
   }
 
-  const gradeInfo = getGradeInfo(attempt.percentage);
-  const answers = (attempt.answers as Record<string, string>) || {};
-
-  const correctCount = questions.filter((q) => {
-    const userAnswer = answers[q.id];
-    if (!userAnswer || !q.correct_answer) return false;
-
-    const normalizedUser = userAnswer.trim().toUpperCase();
-    const normalizedCorrect = q.correct_answer.trim().toUpperCase();
-
-    return normalizedUser === normalizedCorrect;
-  }).length;
-
-  const incorrectCount = questions.filter((q) => {
-    const userAnswer = answers[q.id];
-    if (!userAnswer || !q.correct_answer) return false;
-
-    const normalizedUser = userAnswer.trim().toUpperCase();
-    const normalizedCorrect = q.correct_answer.trim().toUpperCase();
-
-    return normalizedUser !== normalizedCorrect;
-  }).length;
-
-  const unansweredCount = questions.length - Object.keys(answers).length;
+  const gradeInfo = getGrade(attempt.percentage);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
-      {/* Floating stars */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        {[...Array(15)].map((_, i) => (
-          <motion.div
-            key={i}
-            animate={{
-              y: [0, -30, 0],
-              rotate: [0, 360],
-              opacity: [0.2, 0.6, 0.2],
-            }}
-            transition={{
-              duration: 4 + Math.random() * 3,
-              repeat: Infinity,
-              delay: Math.random() * 2,
-            }}
-            className="absolute text-yellow-300"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-            }}
-          >
-            <Star size={15 + Math.random() * 20} fill="currentColor" />
-          </motion.div>
-        ))}
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 py-4">
+          <div className="flex items-center justify-between">
+            <Link
+              to="/exams"
+              className="flex items-center gap-2 text-gray-600 hover:text-gray-800 transition-colors"
+            >
+              <Home className="w-5 h-5" />
+              <span className="font-medium">Back to Exams</span>
+            </Link>
+            {/* Tabs */}
+            <div className="flex bg-gray-100 rounded-xl p-1">
+              <button
+                onClick={() => setActiveTab("summary")}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === "summary"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                RESULTS SUMMARY
+              </button>
+              <button
+                onClick={() => setActiveTab("review")}
+                className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                  activeTab === "review"
+                    ? "bg-white text-indigo-600 shadow-sm"
+                    : "text-gray-600 hover:text-gray-800"
+                }`}
+              >
+                QUESTION REVIEW
+              </button>
+            </div>
+            <div className="w-32" /> {/* Spacer for alignment */}
+          </div>
+        </div>
+      </header>
 
-      <div className="container-custom py-8 relative z-10">
-        {/* Results Card */}
-        <motion.div
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ type: "spring", damping: 20 }}
-          className="max-w-3xl mx-auto"
-        >
-          {/* Main Score Card */}
-          <div
-            className={`bg-gradient-to-r ${gradeInfo.color} rounded-3xl p-8 shadow-2xl text-white text-center mb-8 relative overflow-hidden`}
-          >
-            {/* Background decorations */}
-            <div className="absolute inset-0 opacity-20">
-              {[...Array(10)].map((_, i) => (
+      {/* Content */}
+      <main className="max-w-4xl mx-auto px-4 py-8">
+        <AnimatePresence mode="wait">
+          {activeTab === "summary" ? (
+            <motion.div
+              key="summary"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              {/* Score Card */}
+              <div className="bg-white rounded-3xl shadow-lg p-8 text-center">
                 <motion.div
-                  key={i}
-                  animate={{ rotate: 360, scale: [1, 1.2, 1] }}
-                  transition={{
-                    duration: 10,
-                    repeat: Infinity,
-                    delay: i * 0.5,
-                  }}
-                  className="absolute"
-                  style={{
-                    left: `${10 + i * 10}%`,
-                    top: `${20 + (i % 3) * 30}%`,
-                  }}
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: "spring", delay: 0.2 }}
+                  className="text-8xl mb-4"
                 >
-                  <Star size={30} fill="currentColor" />
+                  {gradeInfo.emoji}
                 </motion.div>
-              ))}
-            </div>
 
-            <div className="relative z-10">
-              {/* Trophy Animation */}
-              <motion.div
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: 1, rotate: 0 }}
-                transition={{ type: "spring", delay: 0.2 }}
-                className="w-32 h-32 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-6"
-              >
-                <span className="text-7xl">{gradeInfo.emoji}</span>
-              </motion.div>
-
-              {/* Score */}
-              <motion.div
-                initial={{ y: 20, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.4 }}
-              >
-                <h1 className="text-6xl font-black mb-2">
-                  {attempt.percentage}%
+                <h1 className="text-3xl font-bold text-gray-800 mb-2">
+                  {exam.subject || exam.title} Results
                 </h1>
-                <p className="text-3xl font-bold text-white/90 mb-2">
-                  {gradeInfo.text}
-                </p>
-                <p className="text-xl text-white/80">{gradeInfo.message}</p>
-              </motion.div>
-            </div>
-          </div>
 
-          {/* Stats Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            {[
-              {
-                icon: Target,
-                label: "Score",
-                value: `${attempt.score}/${attempt.total_points}`,
-                color: "from-blue-400 to-cyan-400",
-              },
-              {
-                icon: CheckCircle2,
-                label: "Correct",
-                value: correctCount,
-                color: "from-green-400 to-emerald-400",
-              },
-              {
-                icon: XCircle,
-                label: "Incorrect",
-                value: incorrectCount,
-                color: "from-red-400 to-rose-400",
-              },
-              {
-                icon: Clock,
-                label: "Time",
-                value: formatTime(attempt.time_spent_seconds),
-                color: "from-purple-400 to-pink-400",
-              },
-            ].map((stat, index) => (
-              <motion.div
-                key={stat.label}
-                initial={{ y: 30, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: 0.5 + index * 0.1 }}
-                className="bg-white rounded-2xl p-4 shadow-lg text-center border-4 border-gray-100"
-              >
-                <div
-                  className={`w-12 h-12 bg-gradient-to-br ${stat.color} rounded-xl flex items-center justify-center mx-auto mb-3`}
-                >
-                  <stat.icon className="w-6 h-6 text-white" />
+                <p className="text-gray-600 mb-6">
+                  {getEncouragement(attempt.percentage)}
+                </p>
+
+                {/* Score Circle */}
+                <div className="relative w-48 h-48 mx-auto mb-8">
+                  <svg className="w-full h-full -rotate-90">
+                    <circle
+                      cx="96"
+                      cy="96"
+                      r="88"
+                      stroke="#e5e7eb"
+                      strokeWidth="12"
+                      fill="none"
+                    />
+                    <motion.circle
+                      cx="96"
+                      cy="96"
+                      r="88"
+                      stroke={attempt.percentage >= 50 ? "#22c55e" : "#ef4444"}
+                      strokeWidth="12"
+                      fill="none"
+                      strokeLinecap="round"
+                      initial={{ strokeDasharray: "0 553" }}
+                      animate={{
+                        strokeDasharray: `${(attempt.percentage / 100) * 553} 553`,
+                      }}
+                      transition={{ duration: 1.5, ease: "easeOut" }}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className={`text-5xl font-bold ${gradeInfo.color}`}>
+                      {attempt.percentage}%
+                    </span>
+                    <span className="text-gray-500">Score</span>
+                  </div>
                 </div>
-                <p className="text-3xl font-black text-gray-800">
-                  {stat.value}
-                </p>
-                <p className="text-gray-500 font-semibold">{stat.label}</p>
-              </motion.div>
-            ))}
-          </div>
 
-          {/* Review Toggle */}
-          <motion.button
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8 }}
-            onClick={() => setShowReview(!showReview)}
-            className="w-full bg-white rounded-2xl p-4 shadow-lg mb-6 flex items-center justify-between hover:bg-gray-50 transition-colors border-4 border-gray-100"
-          >
-            <div className="flex items-center space-x-3">
-              <BookOpen className="w-6 h-6 text-primary-500" />
-              <span className="font-bold text-gray-800">
-                Review Your Answers
-              </span>
-            </div>
-            {showReview ? (
-              <ChevronUp className="w-6 h-6 text-gray-500" />
-            ) : (
-              <ChevronDown className="w-6 h-6 text-gray-500" />
-            )}
-          </motion.button>
+                {/* Stats Grid */}
+                <div className="grid grid-cols-3 gap-4 mb-8">
+                  <div className="bg-green-50 rounded-2xl p-4">
+                    <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto mb-2" />
+                    <p className="text-3xl font-bold text-green-600">
+                      {stats.correct}
+                    </p>
+                    <p className="text-green-700 text-sm">Correct</p>
+                  </div>
+                  <div className="bg-red-50 rounded-2xl p-4">
+                    <XCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
+                    <p className="text-3xl font-bold text-red-600">
+                      {stats.incorrect}
+                    </p>
+                    <p className="text-red-700 text-sm">Incorrect</p>
+                  </div>
+                  <div className="bg-yellow-50 rounded-2xl p-4">
+                    <MinusCircle className="w-8 h-8 text-yellow-500 mx-auto mb-2" />
+                    <p className="text-3xl font-bold text-yellow-600">
+                      {stats.unanswered}
+                    </p>
+                    <p className="text-yellow-700 text-sm">Unanswered</p>
+                  </div>
+                </div>
 
-          {/* Questions Review */}
-          <AnimatePresence>
-            {showReview && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: "auto", opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className="space-y-4 mb-8 overflow-hidden"
-              >
-                {questions.map((question, index) => {
-                  const userAnswer = answers[question.id];
-                  // FIX: Proper comparison with normalization
-                  const isCorrect =
-                    userAnswer &&
-                    userAnswer.trim().toUpperCase() ===
-                      question.correct_answer.trim().toUpperCase();
-                  const isExpanded = expandedQuestion === question.id;
+                {/* Additional Stats */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-indigo-50 rounded-2xl p-4 flex items-center gap-4">
+                    <Clock className="w-10 h-10 text-indigo-500" />
+                    <div className="text-left">
+                      <p className="text-sm text-indigo-600">Time Spent</p>
+                      <p className="text-xl font-bold text-indigo-800">
+                        {formatTime(attempt.time_spent_seconds)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-purple-50 rounded-2xl p-4 flex items-center gap-4">
+                    <Target className="w-10 h-10 text-purple-500" />
+                    <div className="text-left">
+                      <p className="text-sm text-purple-600">Points Earned</p>
+                      <p className="text-xl font-bold text-purple-800">
+                        {attempt.score} / {attempt.total_points}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-                  return (
-                    <motion.div
+              {/* Action Buttons */}
+              <div className="flex gap-4">
+                <button
+                  onClick={() => setActiveTab("review")}
+                  className="flex-1 flex items-center justify-center gap-2 py-4 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors"
+                >
+                  <FileText className="w-5 h-5" />
+                  Review Answers
+                </button>
+                <Link
+                  to="/exams"
+                  className="flex-1 flex items-center justify-center gap-2 py-4 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  <RotateCcw className="w-5 h-5" />
+                  Try Another Exam
+                </Link>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div
+              key="review"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-6"
+            >
+              {/* Title */}
+              <div className="text-center mb-6">
+                <h2 className="text-2xl font-bold text-gray-800">
+                  Question Review
+                </h2>
+              </div>
+
+              {/* Filter Buttons */}
+              <div className="flex flex-wrap gap-2 justify-center">
+                <button
+                  onClick={() => setFilter("all")}
+                  className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                    filter === "all"
+                      ? "bg-indigo-600 text-white"
+                      : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+                  }`}
+                >
+                  All Questions
+                </button>
+                <button
+                  onClick={() => setFilter("correct")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                    filter === "correct"
+                      ? "bg-green-600 text-white"
+                      : "bg-white text-green-600 border border-green-200 hover:bg-green-50"
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Correct ({stats.correct})
+                </button>
+                <button
+                  onClick={() => setFilter("incorrect")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                    filter === "incorrect"
+                      ? "bg-red-600 text-white"
+                      : "bg-white text-red-600 border border-red-200 hover:bg-red-50"
+                  }`}
+                >
+                  <XCircle className="w-4 h-4" />
+                  Incorrect ({stats.incorrect})
+                </button>
+                <button
+                  onClick={() => setFilter("unanswered")}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+                    filter === "unanswered"
+                      ? "bg-yellow-600 text-white"
+                      : "bg-white text-yellow-600 border border-yellow-200 hover:bg-yellow-50"
+                  }`}
+                >
+                  <MinusCircle className="w-4 h-4" />
+                  Unanswered ({stats.unanswered})
+                </button>
+              </div>
+
+              {/* Questions List */}
+              <div className="space-y-4">
+                {filteredQuestions.length === 0 ? (
+                  <div className="bg-white rounded-2xl p-8 text-center">
+                    <div className="text-5xl mb-4">🔍</div>
+                    <p className="text-gray-600">
+                      No questions match this filter
+                    </p>
+                  </div>
+                ) : (
+                  filteredQuestions.map((question, idx) => (
+                    <QuestionCard
                       key={question.id}
-                      initial={{ x: -20, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
-                      transition={{ delay: index * 0.05 }}
-                      className={`bg-white rounded-2xl shadow-lg overflow-hidden border-4 ${
-                        isCorrect
-                          ? "border-green-200"
-                          : userAnswer
-                            ? "border-red-200"
-                            : "border-gray-200"
-                      }`}
-                    >
-                      <button
-                        onClick={() =>
-                          setExpandedQuestion(isExpanded ? null : question.id)
-                        }
-                        className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                      >
-                        <div className="flex items-center space-x-4">
-                          <span
-                            className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white ${
-                              isCorrect
-                                ? "bg-green-500"
-                                : userAnswer
-                                  ? "bg-red-500"
-                                  : "bg-gray-400"
-                            }`}
-                          >
-                            {isCorrect ? (
-                              <CheckCircle2 className="w-5 h-5" />
-                            ) : userAnswer ? (
-                              <XCircle className="w-5 h-5" />
-                            ) : (
-                              "?"
-                            )}
-                          </span>
-                          <div className="text-left">
-                            <p className="font-bold text-gray-800">
-                              Question {index + 1}
-                            </p>
-                            <p className="text-sm text-gray-500 truncate max-w-xs">
-                              {question.question_text.substring(0, 50)}...
-                            </p>
-                          </div>
-                        </div>
-                        {isExpanded ? (
-                          <ChevronUp className="w-5 h-5 text-gray-500" />
-                        ) : (
-                          <ChevronDown className="w-5 h-5 text-gray-500" />
-                        )}
-                      </button>
+                      question={question}
+                      userAnswer={attempt.answers[question.id]}
+                      isExpanded={expandedQuestions.has(question.id)}
+                      onToggle={() => toggleQuestion(question.id)}
+                      questionIndex={questions.findIndex(
+                        (q) => q.id === question.id,
+                      )}
+                    />
+                  ))
+                )}
+              </div>
 
-                      <AnimatePresence>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ height: 0 }}
-                            animate={{ height: "auto" }}
-                            exit={{ height: 0 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="p-4 pt-0 border-t border-gray-100">
-                              <p className="text-gray-800 font-medium mb-4">
-                                {question.question_text}
-                              </p>
-
-                              {/* Options */}
-                              <div className="space-y-2 mb-4">
-                                {question.question_type === "multiple_choice" &&
-                                  question.options &&
-                                  (question.options as string[]).map(
-                                    (option, i) => {
-                                      const optionLetter = String.fromCharCode(
-                                        65 + i,
-                                      );
-                                      const isUserAnswer =
-                                        optionLetter === userAnswer;
-                                      const isCorrectAnswer =
-                                        optionLetter ===
-                                        question.correct_answer;
-
-                                      return (
-                                        <div
-                                          key={i}
-                                          className={`p-3 rounded-xl flex items-center space-x-3 ${
-                                            isCorrectAnswer
-                                              ? "bg-green-100 border-2 border-green-300"
-                                              : isUserAnswer
-                                                ? "bg-red-100 border-2 border-red-300"
-                                                : "bg-gray-50 border-2 border-gray-200"
-                                          }`}
-                                        >
-                                          <span
-                                            className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
-                                              isCorrectAnswer
-                                                ? "bg-green-500 text-white"
-                                                : isUserAnswer
-                                                  ? "bg-red-500 text-white"
-                                                  : "bg-gray-200 text-gray-600"
-                                            }`}
-                                          >
-                                            {optionLetter}
-                                          </span>
-                                          <span className="font-medium text-gray-700 flex-1">
-                                            {option}
-                                          </span>
-                                          {isCorrectAnswer && (
-                                            <CheckCircle2 className="w-5 h-5 text-green-500" />
-                                          )}
-                                          {isUserAnswer && !isCorrectAnswer && (
-                                            <XCircle className="w-5 h-5 text-red-500" />
-                                          )}
-                                        </div>
-                                      );
-                                    },
-                                  )}
-
-                                {question.question_type === "true_false" &&
-                                  ["True", "False"].map((option) => {
-                                    const isUserAnswer = option === userAnswer;
-                                    const isCorrectAnswer =
-                                      option === question.correct_answer;
-
-                                    return (
-                                      <div
-                                        key={option}
-                                        className={`p-3 rounded-xl flex items-center space-x-3 ${
-                                          isCorrectAnswer
-                                            ? "bg-green-100 border-2 border-green-300"
-                                            : isUserAnswer
-                                              ? "bg-red-100 border-2 border-red-300"
-                                              : "bg-gray-50 border-2 border-gray-200"
-                                        }`}
-                                      >
-                                        <span
-                                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold ${
-                                            isCorrectAnswer
-                                              ? "bg-green-500 text-white"
-                                              : isUserAnswer
-                                                ? "bg-red-500 text-white"
-                                                : "bg-gray-200 text-gray-600"
-                                          }`}
-                                        >
-                                          {option === "True" ? "✓" : "✗"}
-                                        </span>
-                                        <span className="font-medium text-gray-700 flex-1">
-                                          {option}
-                                        </span>
-                                        {isCorrectAnswer && (
-                                          <CheckCircle2 className="w-5 h-5 text-green-500" />
-                                        )}
-                                        {isUserAnswer && !isCorrectAnswer && (
-                                          <XCircle className="w-5 h-5 text-red-500" />
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                              </div>
-
-                              {/* Explanation */}
-                              {question.explanation && (
-                                <div className="bg-blue-50 rounded-xl p-4 border-2 border-blue-200">
-                                  <p className="text-sm font-bold text-blue-700 mb-1">
-                                    💡 Explanation
-                                  </p>
-                                  <p className="text-blue-800">
-                                    {question.explanation}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </motion.div>
-                  );
-                })}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Action Buttons */}
-          <motion.div
-            initial={{ y: 30, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            transition={{ delay: 1 }}
-            className="flex flex-col sm:flex-row gap-4"
-          >
-            <Link to={`/exam/${examId}/start`} className="flex-1">
-              <button className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg hover:shadow-xl transition-all flex items-center justify-center space-x-3">
-                <RotateCcw className="w-6 h-6" />
-                <span>Try Again</span>
-              </button>
-            </Link>
-            <Link to={ROUTES.EXAMS} className="flex-1">
-              <button className="w-full py-4 rounded-2xl font-bold text-lg bg-white border-4 border-gray-200 text-gray-700 hover:bg-gray-50 transition-all flex items-center justify-center space-x-3">
-                <BookOpen className="w-6 h-6" />
-                <span>More Exams</span>
-              </button>
-            </Link>
-            <Link to={ROUTES.DASHBOARD} className="flex-1">
-              <button className="w-full py-4 rounded-2xl font-bold text-lg bg-gradient-to-r from-green-400 to-blue-500 text-white shadow-lg hover:shadow-xl transition-all flex items-center justify-center space-x-3">
-                <Home className="w-6 h-6" />
-                <span>Dashboard</span>
-              </button>
-            </Link>
-          </motion.div>
-
-          {/* Encouragement */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 1.2 }}
-            className="mt-8 text-center"
-          >
-            <p className="text-gray-500 font-semibold">
-              {(attempt.percentage || 0) >= 70
-                ? "🎉 Great job! Keep up the fantastic work!"
-                : "💪 Practice makes perfect! Try another exam to improve!"}
-            </p>
-          </motion.div>
-        </motion.div>
-      </div>
+              {/* Back to Summary */}
+              <div className="text-center pt-4">
+                <button
+                  onClick={() => setActiveTab("summary")}
+                  className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                >
+                  Back to Summary
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
     </div>
   );
 }
