@@ -1,300 +1,161 @@
-# Deployment Guide - Vercel
+# 🚀 EduAssess Deployment Guide
 
-This guide explains how to deploy the EduAssess Platform to Vercel.
+## Pre-Deployment Checklist
 
-## Prerequisites
+Before deploying, make sure:
 
-- GitHub account
-- Vercel account (sign up at [vercel.com](https://vercel.com))
-- Supabase project set up (see SUPABASE_SETUP.md)
+- [ ] All code is committed to GitHub
+- [ ] `.env` file is in `.gitignore` (never commit secrets!)
+- [ ] App runs locally with `npm run dev`
+- [ ] App builds successfully with `npm run build`
 
-## Method 1: Deploy via Vercel Dashboard (Recommended)
+---
 
-### Step 1: Push Code to GitHub
+## Option A: Deploy to Vercel (Recommended)
 
-1. **Initialize Git** (if not already done)
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit - Phase 1 complete"
-   ```
+### Step 1: Push to GitHub
 
-2. **Create GitHub Repository**
-   - Go to GitHub and create a new repository
-   - Follow instructions to push your code:
-   ```bash
-   git remote add origin https://github.com/yourusername/edu-assessment-platform.git
-   git branch -M main
-   git push -u origin main
-   ```
+```bash
+# If not already a git repo
+git init
+git add .
+git commit -m "Ready for deployment"
 
-### Step 2: Import Project to Vercel
+# Create repo on GitHub, then:
+git remote add origin https://github.com/YOUR_USERNAME/AssessmentPortal.git
+git branch -M main
+git push -u origin main
+```
 
-1. **Log in to Vercel**
-   - Go to [vercel.com](https://vercel.com)
-   - Click "Sign Up" or "Log In"
-   - Connect your GitHub account
+### Step 2: Connect to Vercel
 
-2. **Import Repository**
-   - Click "Add New..." → "Project"
-   - Select your GitHub repository
-   - Click "Import"
-
-### Step 3: Configure Project
-
-1. **Project Settings**
+1. Go to [vercel.com](https://vercel.com) and sign in with GitHub
+2. Click **"Add New Project"**
+3. Select your **AssessmentPortal** repository
+4. Vercel auto-detects Vite - settings should be:
    - **Framework Preset**: Vite
-   - **Root Directory**: `./` (keep default)
    - **Build Command**: `npm run build`
    - **Output Directory**: `dist`
+   - **Install Command**: `npm install`
 
-2. **Environment Variables**
-   Click "Environment Variables" and add:
-   
-   | Name | Value |
-   |------|-------|
-   | `VITE_SUPABASE_URL` | Your Supabase project URL |
-   | `VITE_SUPABASE_ANON_KEY` | Your Supabase anon key |
-   | `VITE_APP_NAME` | EduAssess Platform |
-   | `VITE_APP_URL` | https://your-project.vercel.app |
+### Step 3: Add Environment Variables
 
-3. **Deploy**
-   - Click "Deploy"
-   - Wait for build to complete (1-2 minutes)
+In Vercel project settings → Environment Variables, add:
 
-### Step 4: Configure Custom Domain (Optional)
+| Name                     | Value                                      |
+| ------------------------ | ------------------------------------------ |
+| `VITE_SUPABASE_URL`      | `https://ssasvoolpzpscaafuedt.supabase.co` |
+| `VITE_SUPABASE_ANON_KEY` | Your anon key from Supabase                |
 
-1. Go to your project settings in Vercel
-2. Click "Domains"
-3. Add your custom domain
-4. Follow DNS configuration instructions
+⚠️ **Important**: Use `VITE_` prefix for all frontend environment variables!
 
-## Method 2: Deploy via Vercel CLI
+### Step 4: Deploy
 
-### Step 1: Install Vercel CLI
+Click **"Deploy"** - Vercel will build and deploy automatically.
 
-```bash
-npm install -g vercel
+Your app will be live at: `https://your-project.vercel.app`
+
+---
+
+## Option B: Deploy to Netlify
+
+### Step 1: Push to GitHub (same as above)
+
+### Step 2: Connect to Netlify
+
+1. Go to [netlify.com](https://netlify.com) and sign in
+2. Click **"Add new site"** → **"Import an existing project"**
+3. Select GitHub and choose your repo
+4. Configure build settings:
+   - **Build command**: `npm run build`
+   - **Publish directory**: `dist`
+
+### Step 3: Add Environment Variables
+
+In Site settings → Environment variables, add:
+
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+### Step 4: Add Redirects
+
+Create `public/_redirects` file:
+
+```
+/*    /index.html   200
 ```
 
-### Step 2: Login to Vercel
+This handles client-side routing.
 
-```bash
-vercel login
-```
+---
 
-### Step 3: Deploy
+## Post-Deployment: Update Supabase
 
-```bash
-# From your project directory
-vercel
+### Add Your Production URL to Supabase
 
-# Follow the prompts:
-# - Set up and deploy? Y
-# - Which scope? Select your account
-# - Link to existing project? N
-# - What's your project's name? edu-assessment-platform
-# - In which directory is your code located? ./
-```
+1. Go to Supabase Dashboard → Authentication → URL Configuration
+2. Add your Vercel/Netlify URL to:
+   - **Site URL**: `https://your-app.vercel.app`
+   - **Redirect URLs**: `https://your-app.vercel.app/**`
 
-### Step 4: Set Environment Variables
+This allows authentication to work on your deployed site.
 
-```bash
-vercel env add VITE_SUPABASE_URL
-# Paste your Supabase URL
-
-vercel env add VITE_SUPABASE_ANON_KEY
-# Paste your Supabase anon key
-
-vercel env add VITE_APP_NAME
-# Enter: EduAssess Platform
-
-vercel env add VITE_APP_URL
-# Enter: your production URL
-```
-
-### Step 5: Deploy to Production
-
-```bash
-vercel --prod
-```
-
-## Post-Deployment Configuration
-
-### 1. Update Supabase Redirect URLs
-
-After deployment, update your Supabase authentication settings:
-
-1. Go to your Supabase project
-2. Navigate to **Authentication** > **URL Configuration**
-3. Add your Vercel URL to **Redirect URLs**:
-   ```
-   https://your-project.vercel.app/**
-   ```
-
-### 2. Update Social OAuth Redirect URLs
-
-For Google and Microsoft OAuth:
-
-**Google Cloud Console**:
-- Add authorized redirect URI: `https://your-project.supabase.co/auth/v1/callback`
-- Add authorized JavaScript origin: `https://your-project.vercel.app`
-
-**Microsoft Azure**:
-- Add redirect URI in your app registration
-- Format: `https://your-project.supabase.co/auth/v1/callback`
-
-### 3. Configure CORS (if needed)
-
-If you encounter CORS issues:
-1. Go to Supabase dashboard
-2. Navigate to **Settings** > **API**
-3. Add your Vercel domain to allowed origins
-
-## Continuous Deployment
-
-Vercel automatically deploys:
-- **Production**: When you push to `main` branch
-- **Preview**: For all other branches and pull requests
-
-### Deployment Workflow
-
-```bash
-# Make changes
-git add .
-git commit -m "Your commit message"
-git push
-
-# Vercel automatically builds and deploys!
-```
-
-## Environment Management
-
-### Development
-```bash
-# Local development uses .env file
-npm run dev
-```
-
-### Production
-Environment variables are managed in Vercel dashboard or CLI
-
-### Preview Deployments
-Each pull request gets its own preview URL
-
-## Monitoring and Analytics
-
-### 1. Vercel Analytics (Free)
-
-1. Go to your project in Vercel
-2. Click "Analytics" tab
-3. View real-time metrics:
-   - Page views
-   - Performance scores
-   - Web Vitals
-
-### 2. Speed Insights
-
-Vercel provides automatic speed insights for your deployment
-
-### 3. Logs
-
-View deployment and runtime logs:
-1. Go to your project
-2. Click "Deployments"
-3. Click on a deployment
-4. View "Build Logs" and "Runtime Logs"
+---
 
 ## Troubleshooting
 
-### Build Failures
+### "Page not found" on refresh
 
-**Issue**: Build fails with module not found
-- **Solution**: Ensure all dependencies are in `package.json`
-- Run `npm install` locally first
+- Make sure `vercel.json` rewrites are configured
+- Or add `_redirects` file for Netlify
 
-**Issue**: Environment variables not working
-- **Solution**: 
-  - Check variable names match exactly (including `VITE_` prefix)
-  - Redeploy after adding variables
+### "Invalid API key" error
 
-### Runtime Errors
+- Check environment variables are set correctly in Vercel/Netlify
+- Make sure they have the `VITE_` prefix
+- Redeploy after adding env vars
 
-**Issue**: 404 on page refresh
-- **Solution**: Vercel automatically handles this for SPAs, but ensure `vercel.json` is configured if needed
+### Auth not working
 
-**Issue**: API calls failing
-- **Solution**: Check CORS settings in Supabase
+- Add production URL to Supabase redirect URLs
+- Check browser console for CORS errors
 
-### Performance Issues
+### Build fails
 
-**Issue**: Slow initial load
-- **Solution**: 
-  - Implement code splitting
-  - Optimize images
-  - Enable Vercel Edge Caching
+Run locally first:
 
-## Cost Optimization
+```bash
+npm run build
+```
 
-### Vercel Free Tier Limits
-- 100GB bandwidth/month
-- Unlimited deployments
-- Unlimited preview deployments
-- Community support
+Fix any TypeScript/build errors before deploying.
 
-### When to Upgrade
-Consider upgrading to Pro ($20/month) when:
-- Bandwidth exceeds 100GB/month
-- Need advanced analytics
-- Require password protection
-- Need priority support
+---
 
-## Rollback Strategy
+## Quick Commands
 
-If a deployment has issues:
+```bash
+# Test build locally
+npm run build
+npm run preview
 
-1. **Via Dashboard**:
-   - Go to "Deployments"
-   - Find previous working deployment
-   - Click "..." → "Promote to Production"
+# Check for TypeScript errors
+npx tsc --noEmit
 
-2. **Via CLI**:
-   ```bash
-   vercel rollback
-   ```
+# Push updates (auto-deploys on Vercel)
+git add .
+git commit -m "Update"
+git push
+```
 
-## Best Practices
+---
 
-1. **Always test locally** before pushing
-2. **Use preview deployments** for testing features
-3. **Monitor analytics** regularly
-4. **Set up GitHub branch protection** for production
-5. **Use semantic versioning** for releases
-6. **Keep dependencies updated**
+## Your Deployment URLs
 
-## Production Checklist
+After deployment, update this section:
 
-Before launching:
+- **Production**: https://_____.vercel.app
+- **Supabase**: https://ssasvoolpzpscaafuedt.supabase.co
+- **GitHub**: https://github.com/Vishwas2018/AssessmentPortal
 
-- [ ] All environment variables configured
-- [ ] Supabase redirect URLs updated
-- [ ] OAuth providers configured
-- [ ] Custom domain configured (if applicable)
-- [ ] Analytics enabled
-- [ ] Error tracking set up
-- [ ] Performance tested
-- [ ] Mobile responsiveness verified
-- [ ] Cross-browser testing completed
-- [ ] SEO metadata added
-
-## Resources
-
-- [Vercel Documentation](https://vercel.com/docs)
-- [Vite Deployment Guide](https://vitejs.dev/guide/static-deploy.html)
-- [Vercel CLI Reference](https://vercel.com/docs/cli)
-
-## Support
-
-- Vercel Status: [vercel-status.com](https://www.vercel-status.com/)
-- Vercel Support: support@vercel.com
-- Community: [vercel.com/community](https://vercel.com/community)
+🎉 **Congratulations! Your EduAssess platform is now live!**

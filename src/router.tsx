@@ -1,23 +1,33 @@
+// Router configuration with all routes including pricing/subscription
+// ============================================
+
 import { createBrowserRouter, Navigate } from "react-router-dom";
-import RootLayout from "./components/layout/RootLayout";
-import ProtectedLayout from "./components/layout/ProtectedLayout";
-import HomePage from "./pages/HomePage";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import ForgotPasswordPage from "./pages/ForgotPasswordPage";
-import DashboardPage from "./pages/DashboardPage";
-import ExamsPage from "./pages/ExamsPage"; // This is the exam LISTING page
-import ExamStartPage from "./pages/ExamStartPage";
-import ExamPage from "./pages/ExamPage"; // This is the exam TAKING page
-import ExamResultsPage from "./pages/ExamResultsPage";
-import ResultsPage from "./pages/ResultsPage";
-import ProfilePage from "./pages/ProfilePage";
+import RootLayout from "@/components/layout/RootLayout";
+import ProtectedLayout from "@/components/layout/ProtectedLayout";
+
+// Public Pages
+import HomePage from "@/pages/HomePage";
+import LoginPage from "@/pages/LoginPage";
+import RegisterPage from "@/pages/RegisterPage";
+import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
+import PricingPage from "@/pages/PricingPage";
+
+// Protected Pages
+import DashboardPage from "@/pages/DashboardPage";
+import ExamsPage from "@/pages/ExamsPage";
+import ExamStartPage from "@/pages/ExamStartPage";
+import TakeExamPageComplete from "@/pages/TakeExamPage"; // Updated import
+import ExamResultsPage from "@/pages/ExamResultsPage";
+import ResultsPage from "@/pages/ResultsPage";
+import ProfilePage from "@/pages/ProfilePage";
+import SubscriptionSuccessPage from "@/pages/SubscriptionSuccessPage";
 
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <RootLayout />,
     children: [
+      // Public Routes
       {
         index: true,
         element: <HomePage />,
@@ -35,7 +45,12 @@ export const router = createBrowserRouter([
         element: <ForgotPasswordPage />,
       },
       {
-        // Protected routes - require authentication
+        path: "pricing",
+        element: <PricingPage />,
+      },
+
+      // Protected Routes
+      {
         element: <ProtectedLayout />,
         children: [
           {
@@ -43,27 +58,22 @@ export const router = createBrowserRouter([
             element: <DashboardPage />,
           },
           {
-            // IMPORTANT: This route shows the list of exams
             path: "exams",
             element: <ExamsPage />,
           },
           {
-            // This route shows exam info before starting
             path: "exam/:examId/start",
             element: <ExamStartPage />,
           },
           {
-            // This route is for TAKING the exam (with questions)
             path: "exam/:examId/take/:attemptId",
-            element: <ExamPage />,
+            element: <TakeExamPageComplete />, // Updated to use new component
           },
           {
-            // This route shows results after completing an exam
             path: "exam/:examId/results/:attemptId",
             element: <ExamResultsPage />,
           },
           {
-            // This route shows all past results
             path: "results",
             element: <ResultsPage />,
           },
@@ -71,10 +81,15 @@ export const router = createBrowserRouter([
             path: "profile",
             element: <ProfilePage />,
           },
-        ],
+          {
+            path: "subscription/success",
+            element: <SubscriptionSuccessPage />,
+          },
+        ], // This closing bracket was missing in your original!
       },
+
+      // Catch all - redirect to home
       {
-        // Catch-all redirect to home
         path: "*",
         element: <Navigate to="/" replace />,
       },

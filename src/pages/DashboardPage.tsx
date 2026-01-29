@@ -23,6 +23,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  CheckCircle,
 } from "lucide-react";
 import { motion } from "framer-motion";
 
@@ -76,9 +77,15 @@ export default function DashboardPage() {
     if (!user?.id) return;
 
     setIsLoading(true);
-    const data = await fetchDashboardData(user.id);
-    setDashboardData(data);
-    setIsLoading(false);
+    setError(null);
+    try {
+      const data = await fetchDashboardData(user.id);
+      setDashboardData(data);
+    } catch (err) {
+      setError("Failed to refresh data");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Loading state
@@ -135,7 +142,9 @@ export default function DashboardPage() {
 
   const stats = dashboardData?.stats || {
     totalExamsTaken: 0,
+    completedExams: 0,
     averageScore: 0,
+    bestScore: 0,
     totalTimeSpent: 0,
     improvementPercentage: 0,
   };
@@ -146,6 +155,15 @@ export default function DashboardPage() {
 
   // Check if user has any data
   const hasData = stats.totalExamsTaken > 0;
+
+  // Format time display
+  const formatTimeDisplay = (seconds: number): string => {
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.round(seconds / 60)}m`;
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.round((seconds % 3600) / 60);
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50">
@@ -182,36 +200,49 @@ export default function DashboardPage() {
               ))}
             </div>
 
-            <div className="relative z-10">
-              <motion.h1
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.2 }}
-                className="text-5xl font-black text-white mb-3 flex items-center space-x-4"
-              >
-                <span>Hey {displayName}!</span>
-                <motion.span
-                  animate={{ rotate: [0, 14, -8, 14, 0] }}
-                  transition={{
-                    duration: 0.5,
-                    repeat: Infinity,
-                    repeatDelay: 3,
-                  }}
-                  className="text-6xl"
+            <div className="relative z-10 flex items-center justify-between">
+              <div>
+                <motion.h1
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.2 }}
+                  className="text-5xl font-black text-white mb-3 flex items-center space-x-4"
                 >
-                  👋
-                </motion.span>
-              </motion.h1>
-              <motion.p
-                initial={{ x: -20, opacity: 0 }}
-                animate={{ x: 0, opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="text-2xl text-white/90 font-bold"
+                  <span>Hey {displayName}!</span>
+                  <motion.span
+                    animate={{ rotate: [0, 14, -8, 14, 0] }}
+                    transition={{
+                      duration: 0.5,
+                      repeat: Infinity,
+                      repeatDelay: 3,
+                    }}
+                    className="text-6xl"
+                  >
+                    👋
+                  </motion.span>
+                </motion.h1>
+                <motion.p
+                  initial={{ x: -20, opacity: 0 }}
+                  animate={{ x: 0, opacity: 1 }}
+                  transition={{ delay: 0.3 }}
+                  className="text-2xl text-white/90 font-bold"
+                >
+                  {hasData
+                    ? "Ready to learn something awesome today? 🚀"
+                    : "Start your first exam and track your progress! 🚀"}
+                </motion.p>
+              </div>
+
+              {/* Refresh button */}
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={handleRefresh}
+                className="p-3 bg-white/20 rounded-xl hover:bg-white/30 transition-colors"
+                title="Refresh data"
               >
-                {hasData
-                  ? "Ready to learn something awesome today? 🚀"
-                  : "Start your first exam and track your progress! 🚀"}
-              </motion.p>
+                <RefreshCw className="w-6 h-6 text-white" />
+              </motion.button>
             </div>
           </div>
         </motion.div>
@@ -223,6 +254,7 @@ export default function DashboardPage() {
               icon: BookOpen,
               label: "Total Exams",
               value: stats.totalExamsTaken,
+              subValue: hasData ? `${stats.completedExams} completed` : null,
               color: "from-blue-400 to-cyan-400",
               emoji: "📚",
               sparkle: true,
@@ -231,18 +263,19 @@ export default function DashboardPage() {
               icon: Award,
               label: "Average Score",
               value: hasData ? `${stats.averageScore}%` : "-",
+              subValue:
+                hasData && stats.bestScore > 0
+                  ? `Best: ${stats.bestScore}%`
+                  : null,
               color: "from-green-400 to-emerald-400",
               emoji: "🎯",
               sparkle: true,
             },
             {
               icon: Clock,
-              label: "Total Time",
-              value: hasData
-                ? stats.totalTimeSpent >= 3600
-                  ? `${Math.round(stats.totalTimeSpent / 3600)}h`
-                  : `${Math.round(stats.totalTimeSpent / 60)}m`
-                : "-",
+              label: "Study Time",
+              value: hasData ? formatTimeDisplay(stats.totalTimeSpent) : "-",
+              subValue: null,
               color: "from-orange-400 to-yellow-400",
               emoji: "⏱️",
               sparkle: false,
@@ -254,6 +287,10 @@ export default function DashboardPage() {
               value: hasData
                 ? `${stats.improvementPercentage >= 0 ? "+" : ""}${stats.improvementPercentage}%`
                 : "-",
+              subValue:
+                hasData && stats.improvementPercentage > 0
+                  ? "Keep it up!"
+                  : null,
               color:
                 stats.improvementPercentage >= 0
                   ? "from-purple-400 to-pink-400"
@@ -299,7 +336,12 @@ export default function DashboardPage() {
                 <p className="text-white/90 font-bold text-sm mb-1">
                   {stat.label}
                 </p>
-                <p className="text-5xl font-black text-white">{stat.value}</p>
+                <p className="text-4xl font-black text-white">{stat.value}</p>
+                {stat.subValue && (
+                  <p className="text-white/70 text-sm font-medium mt-1">
+                    {stat.subValue}
+                  </p>
+                )}
               </div>
             </motion.div>
           ))}
@@ -444,6 +486,15 @@ export default function DashboardPage() {
                     🚀 Start New Exam
                   </motion.button>
                 </Link>
+                <Link to={ROUTES.RESULTS}>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    className="w-full py-4 bg-white/30 backdrop-blur-sm text-white rounded-xl font-bold text-lg border-4 border-white/50 hover:bg-white/40 transition-all"
+                  >
+                    📊 View All Results
+                  </motion.button>
+                </Link>
                 <Link to={ROUTES.PROFILE}>
                   <motion.button
                     whileHover={{ scale: 1.05 }}
@@ -494,7 +545,7 @@ export default function DashboardPage() {
             </h2>
             <p className="text-xl text-white/90 font-bold mb-5">
               {hasData
-                ? "Keep practicing and you'll ace every exam!"
+                ? `You've completed ${stats.completedExams} exam${stats.completedExams !== 1 ? "s" : ""}! Keep practicing to improve even more!`
                 : "Take your first exam and begin your learning journey!"}
             </p>
             <motion.div
@@ -583,6 +634,15 @@ function RecentExamCard({
 
   const grade = getGrade(percentage);
 
+  // Format time
+  const formatTimeSpent = (seconds: number | null): string => {
+    if (!seconds) return "-";
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins === 0) return `${secs}s`;
+    return `${mins}m ${secs}s`;
+  };
+
   return (
     <motion.div
       initial={{ x: -20, opacity: 0 }}
@@ -606,13 +666,18 @@ function RecentExamCard({
             <span>•</span>
             <span className="flex items-center space-x-1">
               <Clock className="h-4 w-4" />
-              <span>{formatTime(attempt.time_spent_seconds || 0)}</span>
+              <span>{formatTimeSpent(attempt.time_spent_seconds)}</span>
             </span>
             <span>•</span>
             <span>
               {formatDate(attempt.completed_at || attempt.started_at)}
             </span>
           </div>
+          {attempt.exam?.subject && (
+            <span className="inline-block mt-2 px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">
+              {attempt.exam.subject}
+            </span>
+          )}
         </div>
         <div
           className={`bg-gradient-to-r ${grade.color} px-4 py-2 rounded-xl shadow-lg`}
@@ -623,6 +688,17 @@ function RecentExamCard({
             <div className="text-white/90 font-bold text-xs">{grade.text}</div>
           </div>
         </div>
+      </div>
+
+      {/* View Results Link */}
+      <div className="mt-3 pt-3 border-t border-gray-100">
+        <Link
+          to={`/exam/${attempt.exam_id}/results/${attempt.id}`}
+          className="text-indigo-600 hover:text-indigo-800 font-semibold text-sm flex items-center space-x-1"
+        >
+          <span>View Details</span>
+          <CheckCircle className="w-4 h-4" />
+        </Link>
       </div>
     </motion.div>
   );

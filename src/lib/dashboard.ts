@@ -1,6 +1,5 @@
 // Dashboard service - fetches real user statistics from Supabase
 import { supabase } from "./supabase";
-import type { ExamAttempt, Exam } from "@/types/supabase";
 
 // ============================================
 // TYPES
@@ -11,10 +10,31 @@ export interface DashboardStats {
   averageScore: number;
   totalTimeSpent: number; // in seconds
   improvementPercentage: number;
+  completedExams: number;
+  bestScore: number;
 }
 
-export interface RecentAttemptWithExam extends ExamAttempt {
-  exam: Exam;
+export interface RecentAttemptWithExam {
+  id: string;
+  exam_id: string;
+  user_id: string;
+  started_at: string;
+  completed_at: string | null;
+  time_spent_seconds: number | null;
+  score: number | null;
+  total_points: number | null;
+  percentage: number | null;
+  status: "in_progress" | "completed" | "abandoned";
+  answers: Record<string, string> | null;
+  exam: {
+    id: string;
+    title: string;
+    exam_type: string;
+    subject: string;
+    year_level: number;
+    duration_minutes: number;
+    total_questions: number;
+  };
 }
 
 export interface TopicPerformance {
@@ -38,7 +58,7 @@ export interface DashboardData {
 // ============================================
 
 export async function fetchDashboardStats(
-  userId: string
+  userId: string,
 ): Promise<DashboardStats> {
   try {
     // Fetch all completed attempts for the user
@@ -46,7 +66,6 @@ export async function fetchDashboardStats(
       .from("exam_attempts")
       .select("*")
       .eq("user_id", userId)
-      .eq("status", "completed")
       .order("completed_at", { ascending: false });
 
     if (error) {
@@ -58,33 +77,47 @@ export async function fetchDashboardStats(
       return getEmptyStats();
     }
 
-    // Calculate total exams taken
+    // Filter completed attempts
+    const completedAttempts = attempts.filter((a) => a.status === "completed");
+
+    // Calculate total exams taken (all attempts)
     const totalExamsTaken = attempts.length;
 
-    // Calculate average score
-    const validScores = attempts.filter(
-      (a) => a.percentage !== null && a.percentage !== undefined
+    // Calculate completed exams
+    const completedExams = completedAttempts.length;
+
+    // Calculate average score (only from completed exams)
+    const validScores = completedAttempts.filter(
+      (a) => a.percentage !== null && a.percentage !== undefined,
     );
     const averageScore =
       validScores.length > 0
         ? Math.round(
             validScores.reduce((sum, a) => sum + (a.percentage || 0), 0) /
-              validScores.length
+              validScores.length,
           )
         : 0;
 
-    // Calculate total time spent
-    const totalTimeSpent = attempts.reduce(
+    // Calculate best score
+    const bestScore =
+      validScores.length > 0
+        ? Math.max(...validScores.map((a) => a.percentage || 0))
+        : 0;
+
+    // Calculate total time spent (from completed exams)
+    const totalTimeSpent = completedAttempts.reduce(
       (sum, a) => sum + (a.time_spent_seconds || 0),
-      0
+      0,
     );
 
     // Calculate improvement (compare last 5 vs first 5 exams)
-    const improvementPercentage = calculateImprovement(attempts);
+    const improvementPercentage = calculateImprovement(completedAttempts);
 
     return {
       totalExamsTaken,
+      completedExams,
       averageScore,
+      bestScore,
       totalTimeSpent,
       improvementPercentage,
     };
@@ -100,7 +133,7 @@ export async function fetchDashboardStats(
 
 export async function fetchRecentAttempts(
   userId: string,
-  limit: number = 5
+  limit: number = 5,
 ): Promise<RecentAttemptWithExam[]> {
   try {
     // Fetch recent completed attempts with exam details
@@ -109,8 +142,16 @@ export async function fetchRecentAttempts(
       .select(
         `
         *,
-        exam:exams(*)
-      `
+        exam:exams (
+          id,
+          title,
+          exam_type,
+          subject,
+          year_level,
+          duration_minutes,
+          total_questions
+        )
+      `,
       )
       .eq("user_id", userId)
       .eq("status", "completed")
@@ -125,7 +166,7 @@ export async function fetchRecentAttempts(
     // Transform the data to match our type
     return (attempts || []).map((attempt) => ({
       ...attempt,
-      exam: attempt.exam as Exam,
+      exam: attempt.exam as RecentAttemptWithExam["exam"],
     }));
   } catch (err) {
     console.error("Error in fetchRecentAttempts:", err);
@@ -138,7 +179,7 @@ export async function fetchRecentAttempts(
 // ============================================
 
 export async function fetchTopicPerformance(
-  userId: string
+  userId: string,
 ): Promise<{ strongTopics: string[]; weakTopics: string[] }> {
   try {
     // Fetch user progress data grouped by subject
@@ -189,10 +230,129 @@ export async function fetchTopicPerformance(
 }
 
 // ============================================
+// FETCH PROFILE STATS (for ProfilePage)
+// ============================================
+
+export interface ProfileStats {
+  examsTaken: number;
+  averageScore: number;
+  totalStudyTime: number; // in seconds
+  bestScore: number;
+  completedExams: number;
+  subjectBreakdown: {
+    subject: string;
+    count: number;
+    avgScore: number;
+  }[];
+}
+
+export async function fetchProfileStats(userId: string): Promise<ProfileStats> {
+  try {
+    // Fetch all attempts for the user
+    const { data: attempts, error } = await supabase
+      .from("exam_attempts")
+      .select(
+        `
+        *,
+        exam:exams (
+          subject
+        )
+      `,
+      )
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("Error fetching profile stats:", error);
+      return getEmptyProfileStats();
+    }
+
+    if (!attempts || attempts.length === 0) {
+      return getEmptyProfileStats();
+    }
+
+    const completedAttempts = attempts.filter((a) => a.status === "completed");
+
+    // Calculate basic stats
+    const examsTaken = attempts.length;
+    const completedExams = completedAttempts.length;
+
+    const validScores = completedAttempts.filter(
+      (a) => a.percentage !== null && a.percentage !== undefined,
+    );
+
+    const averageScore =
+      validScores.length > 0
+        ? Math.round(
+            validScores.reduce((sum, a) => sum + (a.percentage || 0), 0) /
+              validScores.length,
+          )
+        : 0;
+
+    const bestScore =
+      validScores.length > 0
+        ? Math.max(...validScores.map((a) => a.percentage || 0))
+        : 0;
+
+    const totalStudyTime = completedAttempts.reduce(
+      (sum, a) => sum + (a.time_spent_seconds || 0),
+      0,
+    );
+
+    // Calculate subject breakdown
+    const subjectMap = new Map<
+      string,
+      { count: number; totalScore: number; validCount: number }
+    >();
+
+    completedAttempts.forEach((attempt) => {
+      const subject = (attempt.exam as { subject: string })?.subject;
+      if (subject) {
+        const existing = subjectMap.get(subject) || {
+          count: 0,
+          totalScore: 0,
+          validCount: 0,
+        };
+        existing.count++;
+        if (attempt.percentage !== null) {
+          existing.totalScore += attempt.percentage;
+          existing.validCount++;
+        }
+        subjectMap.set(subject, existing);
+      }
+    });
+
+    const subjectBreakdown = Array.from(subjectMap.entries())
+      .map(([subject, data]) => ({
+        subject: formatSubjectName(subject),
+        count: data.count,
+        avgScore:
+          data.validCount > 0
+            ? Math.round(data.totalScore / data.validCount)
+            : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      examsTaken,
+      completedExams,
+      averageScore,
+      bestScore,
+      totalStudyTime,
+      subjectBreakdown,
+    };
+  } catch (err) {
+    console.error("Error in fetchProfileStats:", err);
+    return getEmptyProfileStats();
+  }
+}
+
+// ============================================
 // FETCH ALL DASHBOARD DATA
 // ============================================
 
-export async function fetchDashboardData(userId: string): Promise<DashboardData> {
+export async function fetchDashboardData(
+  userId: string,
+): Promise<DashboardData> {
   try {
     // Fetch all data in parallel
     const [stats, recentAttempts, topics] = await Promise.all([
@@ -229,22 +389,39 @@ export async function fetchDashboardData(userId: string): Promise<DashboardData>
 function getEmptyStats(): DashboardStats {
   return {
     totalExamsTaken: 0,
+    completedExams: 0,
     averageScore: 0,
+    bestScore: 0,
     totalTimeSpent: 0,
     improvementPercentage: 0,
   };
 }
 
-function calculateImprovement(
-  attempts: ExamAttempt[]
-): number {
+function getEmptyProfileStats(): ProfileStats {
+  return {
+    examsTaken: 0,
+    completedExams: 0,
+    averageScore: 0,
+    bestScore: 0,
+    totalStudyTime: 0,
+    subjectBreakdown: [],
+  };
+}
+
+interface AttemptWithTimestamp {
+  completed_at?: string | null;
+  started_at: string;
+  percentage?: number | null;
+}
+
+function calculateImprovement(attempts: AttemptWithTimestamp[]): number {
   if (attempts.length < 2) return 0;
 
   // Sort by date (oldest first)
   const sorted = [...attempts].sort(
     (a, b) =>
       new Date(a.completed_at || a.started_at).getTime() -
-      new Date(b.completed_at || b.started_at).getTime()
+      new Date(b.completed_at || b.started_at).getTime(),
   );
 
   // Get first 5 and last 5 attempts
@@ -264,7 +441,7 @@ function calculateImprovement(
 }
 
 async function deriveTopicsFromAttempts(
-  userId: string
+  userId: string,
 ): Promise<{ strongTopics: string[]; weakTopics: string[] }> {
   try {
     // Fetch completed attempts with exam details
@@ -274,7 +451,7 @@ async function deriveTopicsFromAttempts(
         `
         percentage,
         exam:exams(subject)
-      `
+      `,
       )
       .eq("user_id", userId)
       .eq("status", "completed");
@@ -287,7 +464,7 @@ async function deriveTopicsFromAttempts(
     const subjectScores: Record<string, number[]> = {};
 
     attempts.forEach((attempt) => {
-      const subject = (attempt.exam as any)?.subject;
+      const subject = (attempt.exam as { subject?: string })?.subject;
       if (subject && attempt.percentage !== null) {
         if (!subjectScores[subject]) {
           subjectScores[subject] = [];
@@ -300,10 +477,8 @@ async function deriveTopicsFromAttempts(
     const subjectAverages = Object.entries(subjectScores).map(
       ([subject, scores]) => ({
         subject,
-        average: Math.round(
-          scores.reduce((a, b) => a + b, 0) / scores.length
-        ),
-      })
+        average: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
+      }),
     );
 
     // Sort by average
@@ -339,6 +514,7 @@ function formatSubjectName(subject: string): string {
     "digital technologies": "Digital Technologies",
     numeracy: "Numeracy",
     "language conventions": "Language Conventions",
+    "language-conventions": "Language Conventions",
   };
 
   return (
@@ -356,7 +532,7 @@ export async function updateUserProgress(
   examId: string,
   score: number,
   totalQuestions: number,
-  timeSpent: number
+  timeSpent: number,
 ): Promise<void> {
   try {
     // First, get the exam to know the subject and type
@@ -395,11 +571,11 @@ export async function updateUserProgress(
         existingProgress.total_questions_answered + totalQuestions;
       const newCorrectAnswers = existingProgress.correct_answers + score;
       const newAverageScore = Math.round(
-        (newCorrectAnswers / newTotalQuestions) * 100
+        (newCorrectAnswers / newTotalQuestions) * 100,
       );
       const newBestScore = Math.max(
         existingProgress.best_score || 0,
-        percentage
+        percentage,
       );
       const newTotalTime =
         existingProgress.total_time_spent_seconds + timeSpent;
