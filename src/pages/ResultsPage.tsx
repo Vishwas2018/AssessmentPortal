@@ -28,6 +28,32 @@ import { ROUTES } from "@/data/constants";
 // TYPES
 // ============================================
 
+interface ExamData {
+  id: string;
+  title: string;
+  exam_type: string;
+  subject: string;
+  year_level: number;
+  duration_minutes: number;
+  total_questions: number;
+}
+
+interface ExamAttemptRaw {
+  id: string;
+  exam_id: string;
+  user_id: string;
+  started_at: string;
+  completed_at: string | null;
+  time_spent_seconds: number | null;
+  score: number | null;
+  total_points: number | null;
+  percentage: number | null;
+  status: "in_progress" | "completed" | "abandoned";
+  answers: Record<string, string> | null;
+  flagged: string[] | null;
+  exam: ExamData | ExamData[] | null;
+}
+
 interface ExamAttemptWithExam {
   id: string;
   exam_id: string;
@@ -41,15 +67,7 @@ interface ExamAttemptWithExam {
   status: "in_progress" | "completed" | "abandoned";
   answers: Record<string, string> | null;
   flagged: string[] | null;
-  exam: {
-    id: string;
-    title: string;
-    exam_type: string;
-    subject: string;
-    year_level: number;
-    duration_minutes: number;
-    total_questions: number;
-  };
+  exam: ExamData | null;
 }
 
 interface ResultsStats {
@@ -62,6 +80,15 @@ interface ResultsStats {
 
 type SortField = "date" | "score" | "title";
 type SortOrder = "asc" | "desc";
+
+// Helper to normalize exam data
+function normalizeExamData(
+  exam: ExamData | ExamData[] | null,
+): ExamData | null {
+  if (!exam) return null;
+  if (Array.isArray(exam)) return exam[0] || null;
+  return exam;
+}
 
 // ============================================
 // MAIN COMPONENT
@@ -123,12 +150,15 @@ export default function ResultsPage() {
           return;
         }
 
-        setAttempts(
-          (data || []).map((item) => ({
+        // Transform data with proper typing
+        const transformedData: ExamAttemptWithExam[] = (data || []).map(
+          (item: ExamAttemptRaw) => ({
             ...item,
-            exam: item.exam as ExamAttemptWithExam["exam"],
-          })),
+            exam: normalizeExamData(item.exam),
+          }),
         );
+
+        setAttempts(transformedData);
       } catch (err) {
         console.error("Error:", err);
         setError("An unexpected error occurred");
@@ -169,14 +199,14 @@ export default function ResultsPage() {
   // Get unique subjects and exam types for filters
   const subjects = useMemo(() => {
     const uniqueSubjects = new Set(
-      attempts.map((a) => a.exam?.subject).filter(Boolean),
+      attempts.map((a) => a.exam?.subject).filter(Boolean) as string[],
     );
     return Array.from(uniqueSubjects);
   }, [attempts]);
 
   const examTypes = useMemo(() => {
     const uniqueTypes = new Set(
-      attempts.map((a) => a.exam?.exam_type).filter(Boolean),
+      attempts.map((a) => a.exam?.exam_type).filter(Boolean) as string[],
     );
     return Array.from(uniqueTypes);
   }, [attempts]);
@@ -185,22 +215,18 @@ export default function ResultsPage() {
   const filteredAttempts = useMemo(() => {
     let filtered = [...attempts];
 
-    // Filter by status
     if (selectedStatus !== "all") {
       filtered = filtered.filter((a) => a.status === selectedStatus);
     }
 
-    // Filter by subject
     if (selectedSubject !== "all") {
       filtered = filtered.filter((a) => a.exam?.subject === selectedSubject);
     }
 
-    // Filter by exam type
     if (selectedExamType !== "all") {
       filtered = filtered.filter((a) => a.exam?.exam_type === selectedExamType);
     }
 
-    // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
@@ -210,7 +236,6 @@ export default function ResultsPage() {
       );
     }
 
-    // Sort
     filtered.sort((a, b) => {
       let comparison = 0;
 
@@ -248,30 +273,92 @@ export default function ResultsPage() {
 
     setIsLoading(true);
     try {
-      const { data } = await supabase
+      const { data, error: fetchError } = await supabase
         .from("exam_attempts")
         .select(
           `
           *,
           exam:exams (
-            id, title, exam_type, subject, year_level, duration_minutes, total_questions
+            id,
+            title,
+            exam_type,
+            subject,
+            year_level,
+            duration_minutes,
+            total_questions
           )
         `,
         )
         .eq("user_id", user.id)
         .order("started_at", { ascending: false });
 
-      setAttempts(
-        (data || []).map((item) => ({
+      if (fetchError) {
+        console.error("Error fetching attempts:", fetchError);
+        setError("Failed to load your exam history");
+        return;
+      }
+
+      const transformedData: ExamAttemptWithExam[] = (data || []).map(
+        (item: ExamAttemptRaw) => ({
           ...item,
-          exam: item.exam as ExamAttemptWithExam["exam"],
-        })),
+          exam: normalizeExamData(item.exam),
+        }),
       );
+
+      setAttempts(transformedData);
     } catch (err) {
-      console.error("Refresh error:", err);
+      console.error("Error:", err);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Format time helper
+  const formatTime = (seconds: number): string => {
+    if (seconds < 60) return `${seconds}s`;
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    if (mins < 60) return `${mins}m ${secs}s`;
+    const hours = Math.floor(mins / 60);
+    const remainingMins = mins % 60;
+    return `${hours}h ${remainingMins}m`;
+  };
+
+  // Format date helper
+  const formatDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays} days ago`;
+
+    return date.toLocaleDateString("en-AU", {
+      day: "numeric",
+      month: "short",
+      year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    });
+  };
+
+  // Format subject helper
+  const formatSubject = (subject: string): string => {
+    const subjectMap: Record<string, string> = {
+      mathematics: "Maths 🔢",
+      english: "English 📚",
+      science: "Science 🔬",
+      "general-ability": "General Ability 🧠",
+    };
+    return subjectMap[subject?.toLowerCase()] || subject || "Unknown";
+  };
+
+  // Clear filters
+  const clearFilters = () => {
+    setSearchQuery("");
+    setSelectedSubject("all");
+    setSelectedExamType("all");
+    setSelectedStatus("completed");
   };
 
   // Toggle sort
@@ -284,59 +371,14 @@ export default function ResultsPage() {
     }
   };
 
-  // Format helpers
-  const formatTime = (seconds: number): string => {
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) {
-      const mins = Math.floor(seconds / 60);
-      const secs = seconds % 60;
-      return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-    }
-    const hours = Math.floor(seconds / 3600);
-    const mins = Math.round((seconds % 3600) / 60);
-    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
-  };
-
-  const formatDate = (dateStr: string): string => {
-    const date = new Date(dateStr);
-    return date.toLocaleDateString("en-AU", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  };
-
-  const formatSubject = (subject: string): string => {
-    const subjectMap: Record<string, string> = {
-      maths: "Mathematics",
-      mathematics: "Mathematics",
-      science: "Science",
-      english: "English",
-      reading: "Reading",
-      writing: "Writing",
-      numeracy: "Numeracy",
-    };
-    return (
-      subjectMap[subject?.toLowerCase()] ||
-      subject?.charAt(0).toUpperCase() + subject?.slice(1) ||
-      "Unknown"
-    );
-  };
-
   // Loading state
-  if (isLoading) {
+  if (isLoading && attempts.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center">
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="text-center"
-        >
-          <Loader2 className="w-16 h-16 text-indigo-500 animate-spin mx-auto mb-4" />
-          <p className="text-2xl font-bold text-gray-600">
-            Loading your results...
-          </p>
-        </motion.div>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-indigo-500 animate-spin mx-auto mb-4" />
+          <p className="text-gray-600 font-semibold">Loading your results...</p>
+        </div>
       </div>
     );
   }
@@ -344,15 +386,9 @@ export default function ResultsPage() {
   // Error state
   if (error) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-3xl p-8 shadow-xl text-center max-w-md"
-        >
-          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <AlertCircle className="w-8 h-8 text-red-500" />
-          </div>
+      <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md text-center">
+          <AlertCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-2xl font-black text-gray-800 mb-2">Oops!</h2>
           <p className="text-gray-600 mb-6">{error}</p>
           <button
@@ -361,102 +397,122 @@ export default function ResultsPage() {
           >
             Try Again
           </button>
-        </motion.div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 py-8">
-      <div className="container-custom">
-        {/* Page Header */}
-        <motion.div
-          initial={{ y: -20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          className="mb-8"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-4xl font-black text-gray-800 mb-2">
-                My Results 📊
-              </h1>
-              <p className="text-gray-600 font-semibold">
-                Track your progress and review past exams
-              </p>
-            </div>
-            <button
-              onClick={handleRefresh}
-              className="p-3 bg-white rounded-xl shadow-lg hover:shadow-xl transition-all"
-              title="Refresh"
-            >
-              <RefreshCw className="w-6 h-6 text-indigo-600" />
-            </button>
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-purple-50 p-4 md:p-8">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl md:text-4xl font-black text-gray-800 mb-2">
+              My Results 📊
+            </h1>
+            <p className="text-gray-600 font-semibold">
+              Track your progress and see how you're improving!
+            </p>
           </div>
-        </motion.div>
+
+          <button
+            onClick={handleRefresh}
+            disabled={isLoading}
+            className="mt-4 md:mt-0 flex items-center space-x-2 px-4 py-2 bg-white rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+          >
+            <RefreshCw
+              className={`w-5 h-5 ${isLoading ? "animate-spin" : ""}`}
+            />
+            <span className="font-semibold">Refresh</span>
+          </button>
+        </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          {[
-            {
-              icon: BookOpen,
-              label: "Total Exams",
-              value: stats.completedExams,
-              color: "from-blue-400 to-cyan-400",
-              emoji: "📚",
-            },
-            {
-              icon: Target,
-              label: "Average Score",
-              value: stats.averageScore > 0 ? `${stats.averageScore}%` : "-",
-              color: "from-green-400 to-emerald-400",
-              emoji: "🎯",
-            },
-            {
-              icon: Trophy,
-              label: "Best Score",
-              value: stats.bestScore > 0 ? `${stats.bestScore}%` : "-",
-              color: "from-yellow-400 to-orange-400",
-              emoji: "🏆",
-            },
-            {
-              icon: Clock,
-              label: "Total Time",
-              value:
-                stats.totalTimeSpent > 0
-                  ? formatTime(stats.totalTimeSpent)
-                  : "-",
-              color: "from-purple-400 to-pink-400",
-              emoji: "⏱️",
-            },
-          ].map((stat, index) => (
-            <motion.div
-              key={stat.label}
-              initial={{ scale: 0, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ delay: index * 0.1 }}
-              className={`bg-gradient-to-br ${stat.color} rounded-2xl p-4 shadow-lg border-4 border-white`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <stat.icon className="w-6 h-6 text-white" />
-                <span className="text-2xl">{stat.emoji}</span>
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="bg-white rounded-2xl p-4 shadow-lg border-4 border-indigo-100"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center">
+                <BookOpen className="w-6 h-6 text-indigo-500" />
               </div>
-              <p className="text-white/80 text-sm font-semibold">
-                {stat.label}
-              </p>
-              <p className="text-2xl font-black text-white">{stat.value}</p>
-            </motion.div>
-          ))}
+              <div>
+                <p className="text-2xl font-black text-gray-800">
+                  {stats.completedExams}
+                </p>
+                <p className="text-sm text-gray-500 font-semibold">Completed</p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white rounded-2xl p-4 shadow-lg border-4 border-green-100"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                <Target className="w-6 h-6 text-green-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-black text-gray-800">
+                  {stats.averageScore}%
+                </p>
+                <p className="text-sm text-gray-500 font-semibold">Avg Score</p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="bg-white rounded-2xl p-4 shadow-lg border-4 border-yellow-100"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                <Trophy className="w-6 h-6 text-yellow-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-black text-gray-800">
+                  {stats.bestScore}%
+                </p>
+                <p className="text-sm text-gray-500 font-semibold">
+                  Best Score
+                </p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="bg-white rounded-2xl p-4 shadow-lg border-4 border-purple-100"
+          >
+            <div className="flex items-center space-x-3">
+              <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                <Clock className="w-6 h-6 text-purple-500" />
+              </div>
+              <div>
+                <p className="text-2xl font-black text-gray-800">
+                  {formatTime(stats.totalTimeSpent)}
+                </p>
+                <p className="text-sm text-gray-500 font-semibold">
+                  Total Time
+                </p>
+              </div>
+            </div>
+          </motion.div>
         </div>
 
-        {/* Filters Section */}
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white rounded-3xl shadow-xl p-6 mb-8 border-4 border-gray-100"
-        >
-          {/* Search and Filter Toggle */}
-          <div className="flex flex-col md:flex-row gap-4 mb-4">
+        {/* Search & Filters */}
+        <div className="bg-white rounded-2xl shadow-lg p-4 mb-6">
+          <div className="flex flex-col md:flex-row gap-4">
             {/* Search */}
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -465,17 +521,17 @@ export default function ResultsPage() {
                 placeholder="Search exams..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-200 font-semibold focus:outline-none focus:border-indigo-500 transition-colors"
+                className="w-full pl-12 pr-4 py-3 bg-gray-50 rounded-xl border-2 border-transparent focus:border-indigo-300 focus:bg-white transition-all font-semibold"
               />
             </div>
 
             {/* Filter Toggle */}
             <button
               onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center space-x-2 px-6 py-3 rounded-xl font-bold transition-all ${
+              className={`flex items-center space-x-2 px-4 py-3 rounded-xl font-semibold transition-all ${
                 showFilters
-                  ? "bg-indigo-500 text-white"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  ? "bg-indigo-100 text-indigo-700"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
               }`}
             >
               <Filter className="w-5 h-5" />
@@ -486,6 +542,28 @@ export default function ResultsPage() {
                 <ChevronDown className="w-4 h-4" />
               )}
             </button>
+
+            {/* Sort Buttons */}
+            <div className="flex space-x-2">
+              {[
+                { field: "date" as SortField, label: "Date" },
+                { field: "score" as SortField, label: "Score" },
+                { field: "title" as SortField, label: "Name" },
+              ].map(({ field, label }) => (
+                <button
+                  key={field}
+                  onClick={() => toggleSort(field)}
+                  className={`flex items-center space-x-1 px-3 py-2 rounded-lg text-sm font-semibold transition-all ${
+                    sortField === field
+                      ? "bg-indigo-100 text-indigo-700"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  <span>{label}</span>
+                  {sortField === field && <ArrowUpDown className="w-3 h-3" />}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Expanded Filters */}
@@ -497,16 +575,16 @@ export default function ResultsPage() {
                 exit={{ height: 0, opacity: 0 }}
                 className="overflow-hidden"
               >
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t">
                   {/* Status Filter */}
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Status
                     </label>
                     <select
                       value={selectedStatus}
                       onChange={(e) => setSelectedStatus(e.target.value)}
-                      className="w-full px-4 py-2 rounded-xl border-2 border-gray-200 font-semibold focus:outline-none focus:border-indigo-500"
+                      className="w-full px-4 py-2 bg-gray-50 rounded-xl border-2 border-transparent focus:border-indigo-300 font-semibold"
                     >
                       <option value="all">All Status</option>
                       <option value="completed">Completed</option>
@@ -517,18 +595,18 @@ export default function ResultsPage() {
 
                   {/* Subject Filter */}
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Subject
                     </label>
                     <select
                       value={selectedSubject}
                       onChange={(e) => setSelectedSubject(e.target.value)}
-                      className="w-full px-4 py-2 rounded-xl border-2 border-gray-200 font-semibold focus:outline-none focus:border-indigo-500"
+                      className="w-full px-4 py-2 bg-gray-50 rounded-xl border-2 border-transparent focus:border-indigo-300 font-semibold"
                     >
                       <option value="all">All Subjects</option>
                       {subjects.map((subject) => (
                         <option key={subject} value={subject}>
-                          {formatSubject(subject)}
+                          {subject}
                         </option>
                       ))}
                     </select>
@@ -536,13 +614,13 @@ export default function ResultsPage() {
 
                   {/* Exam Type Filter */}
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                    <label className="block text-sm font-semibold text-gray-600 mb-2">
                       Exam Type
                     </label>
                     <select
                       value={selectedExamType}
                       onChange={(e) => setSelectedExamType(e.target.value)}
-                      className="w-full px-4 py-2 rounded-xl border-2 border-gray-200 font-semibold focus:outline-none focus:border-indigo-500"
+                      className="w-full px-4 py-2 bg-gray-50 rounded-xl border-2 border-transparent focus:border-indigo-300 font-semibold"
                     >
                       <option value="all">All Types</option>
                       {examTypes.map((type) => (
@@ -556,93 +634,53 @@ export default function ResultsPage() {
               </motion.div>
             )}
           </AnimatePresence>
-
-          {/* Sort Options */}
-          <div className="flex items-center space-x-4 mt-4 pt-4 border-t border-gray-200">
-            <span className="text-sm font-bold text-gray-600">Sort by:</span>
-            {[
-              { field: "date" as SortField, label: "Date" },
-              { field: "score" as SortField, label: "Score" },
-              { field: "title" as SortField, label: "Title" },
-            ].map((option) => (
-              <button
-                key={option.field}
-                onClick={() => toggleSort(option.field)}
-                className={`flex items-center space-x-1 px-3 py-1.5 rounded-lg font-semibold transition-all ${
-                  sortField === option.field
-                    ? "bg-indigo-100 text-indigo-700"
-                    : "text-gray-600 hover:bg-gray-100"
-                }`}
-              >
-                <span>{option.label}</span>
-                {sortField === option.field && (
-                  <ArrowUpDown className="w-4 h-4" />
-                )}
-              </button>
-            ))}
-          </div>
-        </motion.div>
+        </div>
 
         {/* Results List */}
-        <motion.div
-          initial={{ y: 20, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          {filteredAttempts.length === 0 ? (
+        <div className="space-y-4">
+          {filteredAttempts.length > 0 ? (
+            filteredAttempts.map((attempt, index) => (
+              <ResultCard
+                key={attempt.id}
+                attempt={attempt}
+                index={index}
+                formatTime={formatTime}
+                formatDate={formatDate}
+                formatSubject={formatSubject}
+              />
+            ))
+          ) : (
             <EmptyState
               hasAttempts={attempts.length > 0}
-              onClearFilters={() => {
-                setSearchQuery("");
-                setSelectedSubject("all");
-                setSelectedExamType("all");
-                setSelectedStatus("all");
-              }}
+              hasFilters={
+                searchQuery !== "" ||
+                selectedSubject !== "all" ||
+                selectedExamType !== "all" ||
+                selectedStatus !== "completed"
+              }
+              onClearFilters={clearFilters}
             />
-          ) : (
-            <div className="space-y-4">
-              {filteredAttempts.map((attempt, index) => (
-                <ResultCard
-                  key={attempt.id}
-                  attempt={attempt}
-                  index={index}
-                  formatTime={formatTime}
-                  formatDate={formatDate}
-                  formatSubject={formatSubject}
-                />
-              ))}
-            </div>
           )}
-        </motion.div>
-
-        {/* Results Count */}
-        {filteredAttempts.length > 0 && (
-          <motion.p
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="text-center text-gray-500 font-semibold mt-6"
-          >
-            Showing {filteredAttempts.length} of {attempts.length} results
-          </motion.p>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
 // ============================================
-// HELPER COMPONENTS
+// SUB-COMPONENTS
 // ============================================
 
 function EmptyState({
   hasAttempts,
+  hasFilters,
   onClearFilters,
 }: {
   hasAttempts: boolean;
+  hasFilters: boolean;
   onClearFilters: () => void;
 }) {
-  if (hasAttempts) {
-    // Has attempts but filters exclude all
+  if (hasAttempts && hasFilters) {
     return (
       <div className="bg-white rounded-3xl shadow-xl p-12 text-center border-4 border-gray-100">
         <div className="text-6xl mb-4">🔍</div>
@@ -662,7 +700,6 @@ function EmptyState({
     );
   }
 
-  // No attempts at all
   return (
     <div className="bg-white rounded-3xl shadow-xl p-12 text-center border-4 border-gray-100">
       <div className="text-6xl mb-4">📝</div>
@@ -755,10 +792,8 @@ function ResultCard({
     >
       <div className="p-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* Left: Exam Info */}
           <div className="flex-1">
             <div className="flex items-start space-x-4">
-              {/* Score Circle (for completed) */}
               {isCompleted && (
                 <div
                   className={`hidden md:flex w-16 h-16 rounded-full bg-gradient-to-br ${grade.color} items-center justify-center flex-shrink-0`}
@@ -770,31 +805,22 @@ function ResultCard({
               )}
 
               <div className="flex-1">
-                {/* Title */}
                 <h3 className="text-xl font-black text-gray-800 mb-2">
                   {attempt.exam?.title || "Untitled Exam"}
                 </h3>
 
-                {/* Meta Info */}
                 <div className="flex flex-wrap items-center gap-3 text-sm">
-                  {/* Subject Badge */}
                   <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full font-semibold">
                     {formatSubject(attempt.exam?.subject || "")}
                   </span>
-
-                  {/* Exam Type Badge */}
                   <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full font-semibold">
                     {attempt.exam?.exam_type || "Exam"}
                   </span>
-
-                  {/* Status Badge */}
                   <span
                     className={`px-3 py-1 rounded-full font-semibold ${statusBadge.color}`}
                   >
                     {statusBadge.text}
                   </span>
-
-                  {/* Flagged indicator */}
                   {attempt.flagged && attempt.flagged.length > 0 && (
                     <span className="px-3 py-1 bg-orange-100 text-orange-700 rounded-full font-semibold flex items-center space-x-1">
                       <Star className="w-3 h-3" />
@@ -803,17 +829,13 @@ function ResultCard({
                   )}
                 </div>
 
-                {/* Stats Row */}
                 <div className="flex flex-wrap items-center gap-4 mt-3 text-sm text-gray-600 font-semibold">
-                  {/* Date */}
                   <span className="flex items-center space-x-1">
                     <Calendar className="w-4 h-4" />
                     <span>
                       {formatDate(attempt.completed_at || attempt.started_at)}
                     </span>
                   </span>
-
-                  {/* Score */}
                   {isCompleted && (
                     <span className="flex items-center space-x-1">
                       <Target className="w-4 h-4" />
@@ -822,8 +844,6 @@ function ResultCard({
                       </span>
                     </span>
                   )}
-
-                  {/* Time */}
                   {attempt.time_spent_seconds && (
                     <span className="flex items-center space-x-1">
                       <Clock className="w-4 h-4" />
@@ -835,34 +855,29 @@ function ResultCard({
             </div>
           </div>
 
-          {/* Right: Actions & Grade */}
           <div className="flex items-center space-x-4">
-            {/* Grade Badge (Mobile & Desktop) */}
             {isCompleted && (
-              <div className="md:hidden flex items-center space-x-2">
-                <span className="text-3xl">{grade.emoji}</span>
-                <div>
-                  <p className="font-black text-gray-800 text-xl">
-                    {percentage}%
-                  </p>
-                  <p className="text-xs text-gray-500 font-semibold">
+              <>
+                <div className="md:hidden flex items-center space-x-2">
+                  <span className="text-3xl">{grade.emoji}</span>
+                  <div>
+                    <p className="font-black text-gray-800 text-xl">
+                      {percentage}%
+                    </p>
+                    <p className="text-xs text-gray-500 font-semibold">
+                      {grade.text}
+                    </p>
+                  </div>
+                </div>
+                <div className="hidden md:block text-center">
+                  <span className="text-3xl">{grade.emoji}</span>
+                  <p className="text-sm text-gray-600 font-semibold">
                     {grade.text}
                   </p>
                 </div>
-              </div>
+              </>
             )}
 
-            {/* Desktop Grade Text */}
-            {isCompleted && (
-              <div className="hidden md:block text-center">
-                <span className="text-3xl">{grade.emoji}</span>
-                <p className="text-sm text-gray-600 font-semibold">
-                  {grade.text}
-                </p>
-              </div>
-            )}
-
-            {/* View Button */}
             {isCompleted ? (
               <Link to={`/exam/${attempt.exam_id}/results/${attempt.id}`}>
                 <motion.button

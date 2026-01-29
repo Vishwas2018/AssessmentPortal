@@ -14,7 +14,37 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store";
-import { EXAM_TYPES, YEAR_LEVELS, SUBJECTS } from "@/data/constants";
+
+// Define constants inline to ensure unique keys
+const EXAM_TYPES = [
+  { value: "all", label: "All Types", emoji: "📋" },
+  { value: "NAPLAN", label: "NAPLAN", emoji: "📘" },
+  { value: "ICAS", label: "ICAS", emoji: "📕" },
+];
+
+const YEAR_LEVELS = [
+  { value: "all", label: "All Years", emoji: "🎓" },
+  { value: "2", label: "Year 2", emoji: "2️⃣" },
+  { value: "3", label: "Year 3", emoji: "3️⃣" },
+  { value: "4", label: "Year 4", emoji: "4️⃣" },
+  { value: "5", label: "Year 5", emoji: "5️⃣" },
+  { value: "6", label: "Year 6", emoji: "6️⃣" },
+  { value: "7", label: "Year 7", emoji: "7️⃣" },
+  { value: "8", label: "Year 8", emoji: "8️⃣" },
+  { value: "9", label: "Year 9", emoji: "9️⃣" },
+];
+
+const SUBJECTS = [
+  { value: "all", label: "All Subjects", emoji: "📚" },
+  { value: "mathematics", label: "Mathematics", emoji: "🔢" },
+  { value: "english", label: "English", emoji: "📖" },
+  { value: "reading", label: "Reading", emoji: "📰" },
+  { value: "writing", label: "Writing", emoji: "✍️" },
+  { value: "language", label: "Language", emoji: "🗣️" },
+  { value: "spelling", label: "Spelling", emoji: "🔤" },
+  { value: "grammar", label: "Grammar", emoji: "📝" },
+  { value: "science", label: "Science", emoji: "🔬" },
+];
 
 // Types
 interface Exam {
@@ -32,7 +62,7 @@ interface Exam {
 }
 
 export default function ExamsPage() {
-  const { user, profile } = useAuthStore();
+  const { profile } = useAuthStore();
   const [exams, setExams] = useState<Exam[]>([]);
   const [filteredExams, setFilteredExams] = useState<Exam[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -64,8 +94,8 @@ export default function ExamsPage() {
           return;
         }
 
-        setExams(data || []);
-        setFilteredExams(data || []);
+        setExams((data as Exam[]) || []);
+        setFilteredExams((data as Exam[]) || []);
       } catch (err) {
         console.error("Error:", err);
         setError("An unexpected error occurred.");
@@ -243,8 +273,11 @@ export default function ExamsPage() {
                 onChange={(e) => setSelectedType(e.target.value)}
                 className="px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-indigo-400 focus:outline-none font-semibold bg-white"
               >
-                {EXAM_TYPES.map((type) => (
-                  <option key={type.value} value={type.value}>
+                {EXAM_TYPES.map((type, index) => (
+                  <option
+                    key={`type-${type.value}-${index}`}
+                    value={type.value}
+                  >
                     {type.emoji} {type.label}
                   </option>
                 ))}
@@ -256,8 +289,11 @@ export default function ExamsPage() {
                 onChange={(e) => setSelectedYear(e.target.value)}
                 className="px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-indigo-400 focus:outline-none font-semibold bg-white"
               >
-                {YEAR_LEVELS.map((year) => (
-                  <option key={year.value} value={year.value}>
+                {YEAR_LEVELS.map((year, index) => (
+                  <option
+                    key={`year-${year.value}-${index}`}
+                    value={year.value}
+                  >
                     {year.emoji} {year.label}
                   </option>
                 ))}
@@ -269,8 +305,11 @@ export default function ExamsPage() {
                 onChange={(e) => setSelectedSubject(e.target.value)}
                 className="px-4 py-3 rounded-xl border-2 border-gray-200 focus:border-indigo-400 focus:outline-none font-semibold bg-white"
               >
-                {SUBJECTS.map((subject) => (
-                  <option key={subject.value} value={subject.value}>
+                {SUBJECTS.map((subject, index) => (
+                  <option
+                    key={`subject-${subject.value}-${index}`}
+                    value={subject.value}
+                  >
                     {subject.emoji} {subject.label}
                   </option>
                 ))}
@@ -298,142 +337,120 @@ export default function ExamsPage() {
           className="mb-6"
         >
           <p className="text-gray-600 font-semibold">
-            {filteredExams.length === 0
-              ? "No exams found 😢"
-              : `Showing ${filteredExams.length} exam${filteredExams.length !== 1 ? "s" : ""} 🎯`}
+            Showing {filteredExams.length} exams 🎯
           </p>
         </motion.div>
 
         {/* Exams Grid */}
-        {filteredExams.length === 0 ? (
+        {filteredExams.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredExams.map((exam, index) => (
+              <motion.div
+                key={exam.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.1 + index * 0.05 }}
+                className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all duration-300 group"
+              >
+                {/* Card Header */}
+                <div
+                  className={`bg-gradient-to-r ${getTypeColor(exam.exam_type)} p-4`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                        <BookOpen className="w-5 h-5 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-white/80 text-sm font-medium">
+                          {exam.exam_type}
+                        </p>
+                        <p className="text-white font-bold">
+                          Year {exam.year_level}
+                        </p>
+                      </div>
+                    </div>
+                    {exam.is_free && (
+                      <span className="px-3 py-1 bg-white/20 text-white text-sm font-bold rounded-full flex items-center gap-1">
+                        <Star className="w-4 h-4" />
+                        FREE
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-5">
+                  <h3 className="text-lg font-bold text-gray-800 mb-2 line-clamp-2">
+                    {exam.title}
+                  </h3>
+
+                  {exam.description && (
+                    <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                      {exam.description}
+                    </p>
+                  )}
+
+                  {/* Tags */}
+                  <div className="flex flex-wrap gap-2 mb-4">
+                    <span className="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm font-semibold rounded-full">
+                      {exam.subject}
+                    </span>
+                    {exam.difficulty && (
+                      <span
+                        className={`px-3 py-1 text-sm font-semibold rounded-full border ${getDifficultyColor(exam.difficulty)}`}
+                      >
+                        {exam.difficulty}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Stats */}
+                  <div className="flex items-center gap-4 text-sm text-gray-500 mb-4">
+                    <div className="flex items-center gap-1">
+                      <Target className="w-4 h-4" />
+                      <span>{exam.total_questions} Q</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      <span>{exam.duration_minutes} min</span>
+                    </div>
+                  </div>
+
+                  {/* Action Button */}
+                  <Link to={`/exam/${exam.id}`}>
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.98 }}
+                      className={`w-full py-3 bg-gradient-to-r ${getTypeColor(exam.exam_type)} text-white font-bold rounded-xl flex items-center justify-center gap-2 group-hover:shadow-lg transition-all`}
+                    >
+                      Start Exam
+                      <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                    </motion.button>
+                  </Link>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-white rounded-3xl shadow-lg p-12 text-center"
+            className="bg-white rounded-3xl shadow-xl p-12 text-center"
           >
             <div className="text-6xl mb-4">🔍</div>
-            <h3 className="text-xl font-bold text-gray-800 mb-2">
-              No exams match your filters
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">
+              No exams found
             </h3>
             <p className="text-gray-600 mb-6">
-              Try adjusting your search or filters to find more exams.
+              Try adjusting your filters or search query.
             </p>
             <button
               onClick={clearFilters}
-              className="px-6 py-3 bg-indigo-500 text-white rounded-xl font-bold hover:bg-indigo-600 transition-colors"
+              className="px-6 py-3 bg-indigo-500 text-white rounded-xl font-semibold hover:bg-indigo-600 transition-colors"
             >
-              Clear All Filters
+              Clear Filters
             </button>
-          </motion.div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <AnimatePresence mode="popLayout">
-              {filteredExams.map((exam, index) => (
-                <motion.div
-                  key={exam.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  transition={{ delay: index * 0.05 }}
-                  layout
-                >
-                  <Link to={`/exam/${exam.id}/start`}>
-                    <div className="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-xl transition-all transform hover:-translate-y-1 border-2 border-gray-100 hover:border-indigo-200 h-full flex flex-col">
-                      {/* Card Header */}
-                      <div
-                        className={`bg-gradient-to-r ${getTypeColor(exam.exam_type)} p-4 relative`}
-                      >
-                        {/* Free Badge */}
-                        {exam.is_free && (
-                          <div className="absolute top-3 right-3 px-3 py-1 bg-yellow-400 text-yellow-900 rounded-full text-xs font-bold flex items-center gap-1">
-                            <Star className="w-3 h-3" fill="currentColor" />
-                            FREE
-                          </div>
-                        )}
-
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-xl flex items-center justify-center">
-                            <span className="text-2xl">
-                              {exam.exam_type === "NAPLAN" ? "📘" : "📗"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-white/80 text-sm font-semibold">
-                              {exam.exam_type}
-                            </span>
-                            <p className="text-white font-bold">
-                              Year {exam.year_level}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Card Body */}
-                      <div className="p-5 flex-1 flex flex-col">
-                        <h3 className="font-bold text-gray-800 text-lg mb-2 line-clamp-2">
-                          {exam.title}
-                        </h3>
-
-                        {exam.description && (
-                          <p className="text-gray-500 text-sm mb-4 line-clamp-2">
-                            {exam.description}
-                          </p>
-                        )}
-
-                        {/* Tags */}
-                        <div className="flex flex-wrap gap-2 mb-4">
-                          <span className="px-3 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">
-                            {exam.subject}
-                          </span>
-                          {exam.difficulty && (
-                            <span
-                              className={`px-3 py-1 rounded-full text-xs font-semibold border ${getDifficultyColor(exam.difficulty)}`}
-                            >
-                              {exam.difficulty}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Stats */}
-                        <div className="flex items-center gap-4 text-sm text-gray-500 mt-auto">
-                          <span className="flex items-center gap-1">
-                            <Target className="w-4 h-4" />
-                            {exam.total_questions} Q
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <Clock className="w-4 h-4" />
-                            {exam.duration_minutes} min
-                          </span>
-                        </div>
-
-                        {/* Start Button */}
-                        <div className="mt-4 pt-4 border-t border-gray-100">
-                          <div className="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-bold text-center flex items-center justify-center gap-2 hover:shadow-lg transition-shadow">
-                            Start Exam
-                            <ChevronRight className="w-5 h-5" />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
-
-        {/* Motivational Footer */}
-        {filteredExams.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="mt-12 text-center"
-          >
-            <div className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-yellow-400 to-orange-500 text-white rounded-2xl font-bold shadow-lg">
-              <Sparkles className="w-5 h-5" />
-              Pick an exam and show what you can do! 🚀
-            </div>
           </motion.div>
         )}
       </div>

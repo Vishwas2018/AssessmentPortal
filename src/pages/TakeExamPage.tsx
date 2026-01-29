@@ -1,6 +1,5 @@
 // src/pages/TakeExamPage.tsx
-// Enhanced exam page - uses ONLY basic columns that exist
-// Columns used: answers, flagged, score, completed_at, status
+// Fixed version with anti-cheating, accessibility, and proper TypeScript types
 // ============================================
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -19,17 +18,38 @@ import {
   Accessibility,
   Shield,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { useAuthStore } from "@/store/authStore";
+import { supabase } from "../lib/supabase";
+import { useAuthStore } from "../store/authStore";
 
 interface Question {
   id: string;
   question_text: string;
   question_type: string;
-  options: unknown;
+  options: string[] | { id: string; text: string }[] | null;
   correct_answer: string;
   points: number;
-  question_number: number;
+  question_number?: number;
+  order_index?: number;
+}
+
+interface Exam {
+  id: string;
+  title: string;
+  subject: string;
+  exam_type: string;
+  duration_minutes: number;
+  total_marks: number;
+}
+
+interface ExamAttempt {
+  id: string;
+  exam_id: string;
+  user_id: string;
+  answers: Record<string, string> | null;
+  flagged: string[] | null;
+  time_remaining?: number;
+  score?: number;
+  status?: string;
 }
 
 interface ViolationLog {
@@ -55,7 +75,7 @@ export default function TakeExamPage() {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [shortAnswer, setShortAnswer] = useState("");
 
-  // Anti-cheating state (local only - not saved to DB)
+  // Anti-cheating state
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
   const [violations, setViolations] = useState<ViolationLog[]>([]);
   const [showWarning, setShowWarning] = useState(false);
@@ -65,7 +85,7 @@ export default function TakeExamPage() {
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">(
     "saved",
   );
-  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoadedRef = useRef(false);
 
   // Accessibility state
@@ -81,7 +101,7 @@ export default function TakeExamPage() {
   const answeredCount = Object.keys(answers).length;
 
   // ============================================
-  // ANTI-CHEATING MEASURES (Local only)
+  // ANTI-CHEATING MEASURES
   // ============================================
 
   const logViolation = useCallback((type: string) => {
@@ -89,23 +109,19 @@ export default function TakeExamPage() {
       ...prev,
       { type, timestamp: new Date().toISOString() },
     ]);
-
-    if (type === "tab_switch") {
-      setTabSwitchCount((prev) => prev + 1);
-    }
+    if (type === "tab_switch") setTabSwitchCount((prev) => prev + 1);
 
     const messages: Record<string, string> = {
-      tab_switch: "⚠️ Tab switch detected! Stay on this page.",
-      copy: "⚠️ Copying is not allowed.",
-      paste: "⚠️ Pasting is not allowed.",
-      right_click: "⚠️ Right-click is disabled.",
+      tab_switch: "⚠️ Tab switch detected!",
+      copy: "⚠️ Copying not allowed.",
+      paste: "⚠️ Pasting not allowed.",
+      right_click: "⚠️ Right-click disabled.",
     };
     setWarningMessage(messages[type] || "⚠️ Activity detected.");
     setShowWarning(true);
     setTimeout(() => setShowWarning(false), 3000);
   }, []);
 
-  // Tab visibility detection
   useEffect(() => {
     const handler = () => {
       if (document.hidden) logViolation("tab_switch");
@@ -114,7 +130,6 @@ export default function TakeExamPage() {
     return () => document.removeEventListener("visibilitychange", handler);
   }, [logViolation]);
 
-  // Block keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (
@@ -130,7 +145,6 @@ export default function TakeExamPage() {
               : "other",
         );
       }
-      // Accessibility navigation
       if (accessibilityMode) {
         if (e.key === "ArrowRight" && currentIndex < totalQuestions - 1)
           setCurrentIndex((p) => p + 1);
@@ -155,7 +169,6 @@ export default function TakeExamPage() {
     currentQuestion,
   ]);
 
-  // Block right-click
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       e.preventDefault();
@@ -165,7 +178,6 @@ export default function TakeExamPage() {
     return () => document.removeEventListener("contextmenu", handler);
   }, [logViolation]);
 
-  // Block copy/paste
   useEffect(() => {
     const onCopy = (e: ClipboardEvent) => {
       e.preventDefault();
@@ -184,15 +196,13 @@ export default function TakeExamPage() {
   }, [logViolation]);
 
   // ============================================
-  // AUTO-SAVE (Only answers and flagged)
+  // AUTO-SAVE
   // ============================================
 
   const saveProgress = useCallback(async () => {
     if (!attemptId || !hasLoadedRef.current) return;
-
     setSaveStatus("saving");
     try {
-      // ONLY save answers and flagged - these columns definitely exist
       const { error } = await supabase
         .from("exam_attempts")
         .update({
@@ -213,7 +223,6 @@ export default function TakeExamPage() {
     }
   }, [attemptId, answers, flagged]);
 
-  // Debounced auto-save on answer change
   useEffect(() => {
     if (!hasLoadedRef.current) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -224,7 +233,7 @@ export default function TakeExamPage() {
   }, [answers, flagged, saveProgress]);
 
   // ============================================
-  // FETCH EXAM DATA
+  // FETCH DATA
   // ============================================
 
   useEffect(() => {
@@ -232,8 +241,7 @@ export default function TakeExamPage() {
       if (!examId || !attemptId) return;
 
       try {
-        // Fetch exam
-        const { data: exam, error: examError } = await supabase
+        const { data: examData, error: examError } = await supabase
           .from("exams")
           .select("*")
           .eq("id", examId)
@@ -244,13 +252,13 @@ export default function TakeExamPage() {
           return;
         }
 
+        const exam = examData as Exam;
         if (exam) {
           setExamTitle(exam.title);
           setExamDuration(exam.duration_minutes);
           setTimeRemaining(exam.duration_minutes * 60);
         }
 
-        // Fetch questions
         const { data: questionsData, error: questionsError } = await supabase
           .from("questions")
           .select("*")
@@ -262,10 +270,9 @@ export default function TakeExamPage() {
           return;
         }
 
-        setQuestions(questionsData || []);
+        setQuestions((questionsData as Question[]) || []);
 
-        // Fetch attempt
-        const { data: attempt, error: attemptError } = await supabase
+        const { data: attemptData, error: attemptError } = await supabase
           .from("exam_attempts")
           .select("*")
           .eq("id", attemptId)
@@ -275,6 +282,7 @@ export default function TakeExamPage() {
           console.error("Attempt fetch error:", attemptError);
         }
 
+        const attempt = attemptData as ExamAttempt | null;
         if (attempt) {
           if (attempt.answers && typeof attempt.answers === "object") {
             setAnswers(attempt.answers);
@@ -284,7 +292,6 @@ export default function TakeExamPage() {
           }
         }
 
-        // Mark as loaded so auto-save can start
         hasLoadedRef.current = true;
       } catch (error) {
         console.error("Fetch error:", error);
@@ -296,14 +303,12 @@ export default function TakeExamPage() {
     fetchExamData();
   }, [examId, attemptId]);
 
-  // Update short answer when question changes
   useEffect(() => {
     if (currentQuestion?.question_type === "short_answer") {
       setShortAnswer(answers[currentQuestion.id] || "");
     }
   }, [currentIndex, currentQuestion, answers]);
 
-  // Timer
   useEffect(() => {
     if (loading || timeRemaining <= 0) return;
     const timer = setInterval(() => {
@@ -325,21 +330,14 @@ export default function TakeExamPage() {
   const formatTime = (s: number) =>
     `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
-  const parseOptions = (options: unknown): string[] => {
+  const parseOptions = (options: Question["options"]): string[] => {
     if (!options) return [];
-    if (Array.isArray(options))
-      return options.map((o) =>
-        typeof o === "string" ? o : o?.text || o?.value || "",
-      );
-    if (typeof options === "string") {
-      try {
-        const p = JSON.parse(options);
-        return Array.isArray(p) ? parseOptions(p) : [options];
-      } catch {
-        return options.includes(",")
-          ? options.split(",").map((s) => s.trim())
-          : [options];
-      }
+    if (Array.isArray(options)) {
+      return options.map((o) => {
+        if (typeof o === "string") return o;
+        if (typeof o === "object" && o !== null && "text" in o) return o.text;
+        return String(o);
+      });
     }
     return [];
   };
@@ -374,7 +372,6 @@ export default function TakeExamPage() {
     setSubmitting(true);
 
     try {
-      // Calculate score
       let total = 0,
         earned = 0;
       questions.forEach((q) => {
@@ -389,7 +386,6 @@ export default function TakeExamPage() {
       });
       const score = total > 0 ? Math.round((earned / total) * 100) : 0;
 
-      // Save final results - only use columns that exist
       const { error } = await supabase
         .from("exam_attempts")
         .update({
@@ -403,11 +399,10 @@ export default function TakeExamPage() {
 
       if (error) {
         console.error("Submit error:", error);
-        alert("Failed to submit. Error: " + error.message);
+        alert("Failed to submit: " + error.message);
         return;
       }
 
-      // Store anti-cheat data in localStorage for results page
       localStorage.setItem(
         `exam_${attemptId}_violations`,
         JSON.stringify(violations),
@@ -424,7 +419,7 @@ export default function TakeExamPage() {
       navigate(`/exam/${examId}/results/${attemptId}`);
     } catch (e) {
       console.error("Submit exception:", e);
-      alert("Failed to submit. Please try again.");
+      alert("Failed to submit.");
     } finally {
       setSubmitting(false);
       setShowSubmitModal(false);
@@ -455,7 +450,6 @@ export default function TakeExamPage() {
     xlarge: "text-xl",
   };
 
-  // Loading state
   if (loading)
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50">
@@ -466,7 +460,6 @@ export default function TakeExamPage() {
       </div>
     );
 
-  // No questions state
   if (!currentQuestion)
     return (
       <div className="h-screen flex items-center justify-center bg-gray-50">
@@ -477,7 +470,7 @@ export default function TakeExamPage() {
             onClick={() => navigate("/exams")}
             className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
           >
-            Back to Exams
+            Back
           </button>
         </div>
       </div>
@@ -497,7 +490,7 @@ export default function TakeExamPage() {
             initial={{ y: -60, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -60, opacity: 0 }}
-            className="fixed top-0 left-0 right-0 bg-red-600 text-white py-3 px-4 text-center z-50 flex items-center justify-center gap-2 shadow-lg"
+            className="fixed top-0 left-0 right-0 bg-red-600 text-white py-3 px-4 text-center z-50 flex items-center justify-center gap-2"
           >
             <AlertTriangle className="w-5 h-5" />
             {warningMessage}
@@ -512,7 +505,7 @@ export default function TakeExamPage() {
 
       {/* Header */}
       <header
-        className={`h-16 ${highContrast ? "bg-gray-900 border-gray-700" : "bg-white"} border-b shadow-sm flex items-center justify-between px-6 shrink-0`}
+        className={`h-16 ${highContrast ? "bg-gray-900" : "bg-white"} border-b shadow-sm flex items-center justify-between px-6 shrink-0`}
       >
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
@@ -533,7 +526,6 @@ export default function TakeExamPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Anti-cheat indicator */}
           <div
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${highContrast ? "bg-gray-800" : "bg-gray-100"}`}
           >
@@ -546,7 +538,6 @@ export default function TakeExamPage() {
             )}
           </div>
 
-          {/* Save status */}
           <div
             className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs ${
               saveStatus === "saved"
@@ -564,7 +555,6 @@ export default function TakeExamPage() {
                 : "Error"}
           </div>
 
-          {/* Timer */}
           <div
             className={`flex items-center gap-2 px-4 py-2 rounded-full font-mono text-lg font-semibold ${
               timeRemaining < 300
@@ -576,7 +566,6 @@ export default function TakeExamPage() {
             {formatTime(timeRemaining)}
           </div>
 
-          {/* Accessibility */}
           <button
             onClick={() => setShowAccessibilityPanel(!showAccessibilityPanel)}
             className={`w-9 h-9 rounded-full flex items-center justify-center transition ${
@@ -584,13 +573,12 @@ export default function TakeExamPage() {
                 ? "bg-indigo-600 text-white"
                 : highContrast
                   ? "bg-gray-700 text-gray-300"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  : "bg-gray-100 text-gray-600"
             }`}
           >
             <Accessibility className="w-5 h-5" />
           </button>
 
-          {/* User avatar */}
           <div
             className={`w-9 h-9 ${highContrast ? "bg-gray-700" : "bg-indigo-100"} rounded-full flex items-center justify-center ${highContrast ? "text-white" : "text-indigo-700"} font-semibold`}
           >
@@ -606,14 +594,13 @@ export default function TakeExamPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className={`absolute top-16 right-6 ${highContrast ? "bg-gray-800 border-gray-700" : "bg-white"} rounded-xl shadow-xl border p-4 z-40 w-64`}
+            className={`absolute top-16 right-6 ${highContrast ? "bg-gray-800" : "bg-white"} rounded-xl shadow-xl border p-4 z-40 w-64`}
           >
             <h3
               className={`font-semibold ${highContrast ? "text-white" : "text-gray-800"} mb-3`}
             >
               Accessibility
             </h3>
-
             <div className="space-y-3">
               <label className="flex items-center justify-between">
                 <span
@@ -630,7 +617,6 @@ export default function TakeExamPage() {
                   />
                 </button>
               </label>
-
               <label className="flex items-center justify-between">
                 <span
                   className={`text-sm ${highContrast ? "text-gray-300" : "text-gray-600"}`}
@@ -646,7 +632,6 @@ export default function TakeExamPage() {
                   />
                 </button>
               </label>
-
               <div>
                 <span
                   className={`text-sm ${highContrast ? "text-gray-300" : "text-gray-600"} block mb-2`}
@@ -669,15 +654,6 @@ export default function TakeExamPage() {
                   ))}
                 </div>
               </div>
-
-              {accessibilityMode && (
-                <div
-                  className={`pt-2 border-t ${highContrast ? "border-gray-700 text-gray-400" : "text-gray-500"} text-xs`}
-                >
-                  <p>← → Navigate</p>
-                  <p>1-4 Select answer</p>
-                </div>
-              )}
             </div>
           </motion.div>
         )}
@@ -687,7 +663,7 @@ export default function TakeExamPage() {
       <div className="flex-1 flex min-h-0">
         {/* Sidebar */}
         <aside
-          className={`w-48 ${highContrast ? "bg-gray-900 border-gray-700" : "bg-white"} border-r p-3 flex flex-col shrink-0`}
+          className={`w-48 ${highContrast ? "bg-gray-900" : "bg-white"} border-r p-3 flex flex-col shrink-0`}
         >
           <div
             className={`text-sm font-medium ${highContrast ? "text-white" : "text-gray-700"} mb-1`}
@@ -732,10 +708,9 @@ export default function TakeExamPage() {
         {/* Question Area */}
         <main className="flex-1 flex flex-col min-h-0 p-4">
           <div
-            className={`flex-1 ${highContrast ? "bg-gray-900 border-gray-700" : "bg-white"} rounded-xl shadow-sm border overflow-y-auto`}
+            className={`flex-1 ${highContrast ? "bg-gray-900" : "bg-white"} rounded-xl shadow-sm border overflow-y-auto`}
           >
             <div className="p-5 max-w-4xl mx-auto">
-              {/* Question Header */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <span
@@ -766,7 +741,6 @@ export default function TakeExamPage() {
                 </button>
               </div>
 
-              {/* Question Content */}
               <div
                 className={`prose prose-lg max-w-none mb-5 question-content ${highContrast ? "prose-invert" : ""}`}
                 dangerouslySetInnerHTML={{
@@ -774,7 +748,6 @@ export default function TakeExamPage() {
                 }}
               />
 
-              {/* Answer Area */}
               {currentQuestion.question_type === "short_answer" ? (
                 <div className="space-y-2">
                   <label
@@ -835,9 +808,8 @@ export default function TakeExamPage() {
             </div>
           </div>
 
-          {/* Footer */}
           <div
-            className={`flex items-center justify-between mt-3 ${highContrast ? "bg-gray-900 border-gray-700" : "bg-white"} rounded-lg shadow-sm border p-3 shrink-0`}
+            className={`flex items-center justify-between mt-3 ${highContrast ? "bg-gray-900" : "bg-white"} rounded-lg shadow-sm border p-3 shrink-0`}
           >
             <button
               onClick={() => goTo(currentIndex - 1)}
@@ -943,7 +915,6 @@ export default function TakeExamPage() {
         )}
       </AnimatePresence>
 
-      {/* Styles */}
       <style>{`
         .question-content { font-size: ${fontSize === "xlarge" ? "20px" : fontSize === "large" ? "18px" : "16px"}; line-height: 1.6; }
         .question-content p { margin-bottom: 10px; }

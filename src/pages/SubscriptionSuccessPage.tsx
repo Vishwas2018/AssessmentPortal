@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import confetti from "canvas-confetti";
 import {
@@ -17,14 +17,13 @@ import { fetchUserSubscription } from "@/lib/subscription";
 import { ROUTES } from "@/data/constants";
 
 export default function SubscriptionSuccessPage() {
-  const [searchParams] = useSearchParams();
+  // Removed unused searchParams
   const { user } = useAuthStore();
   const [isVerifying, setIsVerifying] = useState(true);
   const [subscriptionVerified, setSubscriptionVerified] = useState(false);
 
   // Fire confetti on mount
   useEffect(() => {
-    // Initial burst
     confetti({
       particleCount: 100,
       spread: 70,
@@ -32,7 +31,6 @@ export default function SubscriptionSuccessPage() {
       colors: ["#fbbf24", "#f97316", "#ec4899", "#8b5cf6", "#06b6d4"],
     });
 
-    // Side bursts
     setTimeout(() => {
       confetti({
         particleCount: 50,
@@ -53,7 +51,6 @@ export default function SubscriptionSuccessPage() {
       });
     }, 400);
 
-    // Continuous celebration
     const interval = setInterval(() => {
       confetti({
         particleCount: 30,
@@ -66,7 +63,6 @@ export default function SubscriptionSuccessPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Verify subscription
   useEffect(() => {
     async function verifySubscription() {
       if (!user?.id) {
@@ -74,9 +70,7 @@ export default function SubscriptionSuccessPage() {
         return;
       }
 
-      // Give Stripe webhook time to process
       await new Promise((resolve) => setTimeout(resolve, 2000));
-
       const subscription = await fetchUserSubscription(user.id);
 
       if (
@@ -94,26 +88,18 @@ export default function SubscriptionSuccessPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden flex items-center justify-center p-4">
-      {/* Animated background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <motion.div
-          animate={{
-            scale: [1, 1.3, 1],
-            opacity: [0.3, 0.6, 0.3],
-          }}
+          animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0.6, 0.3] }}
           transition={{ duration: 4, repeat: Infinity }}
           className="absolute top-1/4 left-1/4 w-96 h-96 bg-yellow-500 rounded-full blur-3xl"
         />
         <motion.div
-          animate={{
-            scale: [1, 1.2, 1],
-            opacity: [0.2, 0.5, 0.2],
-          }}
+          animate={{ scale: [1, 1.2, 1], opacity: [0.2, 0.5, 0.2] }}
           transition={{ duration: 5, repeat: Infinity, delay: 1 }}
           className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-pink-500 rounded-full blur-3xl"
         />
 
-        {/* Floating stars */}
         {[...Array(30)].map((_, i) => (
           <motion.div
             key={i}
@@ -142,7 +128,6 @@ export default function SubscriptionSuccessPage() {
         ))}
       </div>
 
-      {/* Main Content */}
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -150,7 +135,6 @@ export default function SubscriptionSuccessPage() {
         className="relative z-10 max-w-lg w-full"
       >
         <div className="bg-white/10 backdrop-blur-xl rounded-3xl p-8 border border-white/20 shadow-2xl">
-          {/* Success Icon */}
           <motion.div
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
@@ -168,7 +152,6 @@ export default function SubscriptionSuccessPage() {
               </motion.div>
             </div>
 
-            {/* Sparkles around icon */}
             {[0, 60, 120, 180, 240, 300].map((angle, i) => (
               <motion.div
                 key={i}
@@ -187,7 +170,6 @@ export default function SubscriptionSuccessPage() {
             ))}
           </motion.div>
 
-          {/* Title */}
           <motion.h1
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -203,11 +185,9 @@ export default function SubscriptionSuccessPage() {
             transition={{ delay: 0.4 }}
             className="text-lg text-gray-300 text-center mb-8"
           >
-            You now have unlimited access to all exams and features. Let's start
-            your learning journey!
+            You now have unlimited access to all exams and features!
           </motion.p>
 
-          {/* Status */}
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -233,13 +213,12 @@ export default function SubscriptionSuccessPage() {
               <div className="flex items-center space-x-2 text-yellow-400">
                 <Sparkles className="w-5 h-5" />
                 <span className="font-semibold">
-                  Almost ready - may take a moment to activate
+                  Almost ready - may take a moment
                 </span>
               </div>
             )}
           </motion.div>
 
-          {/* Benefits */}
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -254,7 +233,7 @@ export default function SubscriptionSuccessPage() {
               {[
                 "Unlimited practice exams",
                 "All NAPLAN & ICAS content",
-                "Detailed analytics & insights",
+                "Detailed analytics",
                 "Personalized study plans",
                 "Priority support",
               ].map((benefit, i) => (
@@ -274,7 +253,6 @@ export default function SubscriptionSuccessPage() {
             </ul>
           </motion.div>
 
-          {/* CTA Buttons */}
           <motion.div
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
@@ -305,7 +283,6 @@ export default function SubscriptionSuccessPage() {
           </motion.div>
         </div>
 
-        {/* Help Text */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

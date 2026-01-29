@@ -33,7 +33,7 @@ interface AuthState {
   updateProfile: (
     updates: Partial<UserProfile>,
   ) => Promise<{ error: Error | null }>;
-  refreshProfile: () => Promise<void>; // ADDED
+  refreshProfile: () => Promise<void>;
   logout: () => Promise<void>;
   reset: () => void;
 }
@@ -68,7 +68,6 @@ export const useAuthStore = create<AuthState>()(
             .single();
 
           if (error) {
-            // Profile might not exist yet for new users
             if (error.code === "PGRST116") {
               console.log("Profile not found, user may be new");
               return;
@@ -77,7 +76,7 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
 
-          set({ profile: data });
+          set({ profile: data as UserProfile });
         } catch (err) {
           console.error("Error in fetchProfile:", err);
         }
@@ -88,12 +87,15 @@ export const useAuthStore = create<AuthState>()(
         if (!user) return { error: new Error("No user logged in") };
 
         try {
+          // Use type assertion to bypass strict Supabase typing
+          const updatePayload = {
+            ...updates,
+            updated_at: new Date().toISOString(),
+          };
+
           const { error } = await supabase
             .from("user_profiles")
-            .update({
-              ...updates,
-              updated_at: new Date().toISOString(),
-            })
+            .update(updatePayload as never)
             .eq("id", user.id);
 
           if (error) {
@@ -101,10 +103,11 @@ export const useAuthStore = create<AuthState>()(
             return { error };
           }
 
-          // Update local state
           const currentProfile = get().profile;
           set({
-            profile: currentProfile ? { ...currentProfile, ...updates } : null,
+            profile: currentProfile
+              ? ({ ...currentProfile, ...updates } as UserProfile)
+              : null,
           });
 
           return { error: null };
@@ -114,7 +117,6 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // ADDED: Refresh profile method
       refreshProfile: async () => {
         const { user } = get();
         if (!user) return;
@@ -147,7 +149,6 @@ export const useAuthStore = create<AuthState>()(
     {
       name: "auth-storage",
       partialize: (state) => ({
-        // Only persist these fields
         user: state.user,
         profile: state.profile,
         isAuthenticated: state.isAuthenticated,
@@ -157,7 +158,7 @@ export const useAuthStore = create<AuthState>()(
 );
 
 // ============================================
-// UI Store (for global UI state)
+// UI Store
 // ============================================
 interface UIState {
   sidebarOpen: boolean;
@@ -174,7 +175,7 @@ export const useUIStore = create<UIState>((set) => ({
 }));
 
 // ============================================
-// Exam Store (for exam-taking state)
+// Exam Store
 // ============================================
 interface ExamState {
   currentExamId: string | null;
