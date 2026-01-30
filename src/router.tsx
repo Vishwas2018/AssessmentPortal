@@ -1,4 +1,6 @@
-// Router configuration with all routes including pricing/subscription
+// src/router.tsx
+// Router configuration with all routes including OAuth callback
+// FIXED: Added auth/callback route for OAuth redirects
 // ============================================
 
 import { createBrowserRouter, Navigate } from "react-router-dom";
@@ -11,12 +13,13 @@ import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
 import PricingPage from "@/pages/PricingPage";
+import AuthCallbackPage from "@/pages/AuthCallbackPage"; // NEW: OAuth callback handler
 
 // Protected Pages
 import DashboardPage from "@/pages/DashboardPage";
 import ExamsPage from "@/pages/ExamsPage";
 import ExamStartPage from "@/pages/ExamStartPage";
-import TakeExamPageComplete from "@/pages/TakeExamPage"; // Updated import
+import TakeExamPage from "@/pages/TakeExamPage";
 import ExamResultsPage from "@/pages/ExamResultsPage";
 import ResultsPage from "@/pages/ResultsPage";
 import ProfilePage from "@/pages/ProfilePage";
@@ -27,7 +30,9 @@ export const router = createBrowserRouter([
     path: "/",
     element: <RootLayout />,
     children: [
-      // Public Routes
+      // ============================================
+      // PUBLIC ROUTES
+      // ============================================
       {
         index: true,
         element: <HomePage />,
@@ -48,8 +53,15 @@ export const router = createBrowserRouter([
         path: "pricing",
         element: <PricingPage />,
       },
+      // NEW: OAuth callback route - handles redirect after Google/Microsoft sign-in
+      {
+        path: "auth/callback",
+        element: <AuthCallbackPage />,
+      },
 
-      // Protected Routes
+      // ============================================
+      // PROTECTED ROUTES
+      // ============================================
       {
         element: <ProtectedLayout />,
         children: [
@@ -67,7 +79,7 @@ export const router = createBrowserRouter([
           },
           {
             path: "exam/:examId/take/:attemptId",
-            element: <TakeExamPageComplete />, // Updated to use new component
+            element: <TakeExamPage />,
           },
           {
             path: "exam/:examId/results/:attemptId",
@@ -85,9 +97,12 @@ export const router = createBrowserRouter([
             path: "subscription/success",
             element: <SubscriptionSuccessPage />,
           },
-        ], // This closing bracket was missing in your original!
+        ],
       },
 
+      // ============================================
+      // FALLBACK ROUTES
+      // ============================================
       // Catch all - redirect to home
       {
         path: "*",

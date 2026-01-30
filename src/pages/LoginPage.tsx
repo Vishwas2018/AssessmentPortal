@@ -1,3 +1,7 @@
+// src/pages/LoginPage.tsx
+// FIXED: Proper Google OAuth redirect handling
+// ============================================
+
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
@@ -97,21 +101,33 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
+    setIsLoading(true);
+    setError(null);
+
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/dashboard`,
+          // FIXED: Redirect to auth callback page instead of directly to dashboard
+          // This allows proper handling of the OAuth tokens
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: {
+            access_type: "offline",
+            prompt: "consent",
+          },
         },
       });
 
       if (error) {
         console.error("Google login error:", error);
         setError("Google login failed. Please try again.");
+        setIsLoading(false);
       }
+      // If no error, user will be redirected to Google
     } catch (err) {
       console.error("Google login error:", err);
       setError("Google login failed. Please try again.");
+      setIsLoading(false);
     }
   };
 
@@ -290,7 +306,8 @@ export default function LoginPage() {
           whileTap={{ scale: 0.98 }}
           onClick={handleGoogleLogin}
           type="button"
-          className="w-full py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-50 transition-all flex items-center justify-center gap-3"
+          disabled={isLoading}
+          className="w-full py-3 border-2 border-gray-200 rounded-xl font-bold text-gray-700 hover:bg-gray-50 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path

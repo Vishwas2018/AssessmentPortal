@@ -1,9 +1,18 @@
+// src/store/index.ts
+// Unified application stores using Zustand
+// This is the SINGLE source of truth for auth state
+// DELETE the separate authStore.ts file if it exists
+// ============================================
+
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
-// Types
+// ============================================
+// TYPES
+// ============================================
+
 interface UserProfile {
   id: string;
   email: string;
@@ -17,7 +26,12 @@ interface UserProfile {
   updated_at?: string;
 }
 
+// ============================================
+// AUTH STORE
+// ============================================
+
 interface AuthState {
+  // State
   user: User | null;
   session: Session | null;
   profile: UserProfile | null;
@@ -36,16 +50,35 @@ interface AuthState {
   refreshProfile: () => Promise<void>;
   logout: () => Promise<void>;
   reset: () => void;
+
+  // Compatibility aliases (for components using old store API)
+  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signUp: (
+    email: string,
+    password: string,
+    metadata?: Record<string, unknown>,
+  ) => Promise<{ error: Error | null }>;
+  signOut: () => Promise<void>;
+  initialize: () => Promise<void>;
+  initialized: boolean;
+  loading: boolean; // Alias for isLoading
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
+      // Initial state
       user: null,
       session: null,
       profile: null,
       isAuthenticated: false,
       isLoading: true,
+      initialized: false,
+      loading: true, // Alias
+
+      // ============================================
+      // CORE SETTERS
+      // ============================================
 
       setUser: (user) =>
         set({
@@ -57,7 +90,11 @@ export const useAuthStore = create<AuthState>()(
 
       setProfile: (profile) => set({ profile }),
 
-      setLoading: (isLoading) => set({ isLoading }),
+      setLoading: (isLoading) => set({ isLoading, loading: isLoading }),
+
+      // ============================================
+      // PROFILE OPERATIONS
+      // ============================================
 
       fetchProfile: async (userId: string) => {
         try {
@@ -69,6 +106,7 @@ export const useAuthStore = create<AuthState>()(
 
           if (error) {
             if (error.code === "PGRST116") {
+              // Profile not found - user may be new
               console.log("Profile not found, user may be new");
               return;
             }
@@ -87,7 +125,6 @@ export const useAuthStore = create<AuthState>()(
         if (!user) return { error: new Error("No user logged in") };
 
         try {
-          // Use type assertion to bypass strict Supabase typing
           const updatePayload = {
             ...updates,
             updated_at: new Date().toISOString(),
@@ -103,6 +140,7 @@ export const useAuthStore = create<AuthState>()(
             return { error };
           }
 
+          // Update local state
           const currentProfile = get().profile;
           set({
             profile: currentProfile
@@ -122,6 +160,10 @@ export const useAuthStore = create<AuthState>()(
         if (!user) return;
         await get().fetchProfile(user.id);
       },
+
+      // ============================================
+      // AUTH OPERATIONS
+      // ============================================
 
       logout: async () => {
         try {
@@ -144,7 +186,106 @@ export const useAuthStore = create<AuthState>()(
           profile: null,
           isAuthenticated: false,
           isLoading: false,
+          loading: false,
         }),
+
+      // ============================================
+      // COMPATIBILITY METHODS (for old store API)
+      // ============================================
+
+      initialize: async () => {
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          set({
+            session,
+            user: session?.user ?? null,
+            isAuthenticated: !!session?.user,
+            isLoading: false,
+            loading: false,
+            initialized: true,
+          });
+
+          // Listen for auth changes
+          supabase.auth.onAuthStateChange((_event, session) => {
+            set({
+              session,
+              user: session?.user ?? null,
+              isAuthenticated: !!session?.user,
+            });
+          });
+
+          // Fetch profile if logged in
+          if (session?.user) {
+            get().fetchProfile(session.user.id);
+          }
+        } catch (error) {
+          console.error("Auth initialization error:", error);
+          set({ isLoading: false, loading: false, initialized: true });
+        }
+      },
+
+      signIn: async (email: string, password: string) => {
+        set({ isLoading: true, loading: true });
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+          });
+          if (error) throw error;
+          set({
+            user: data.user,
+            session: data.session,
+            isAuthenticated: true,
+            isLoading: false,
+            loading: false,
+          });
+
+          // Fetch profile after login
+          if (data.user) {
+            get().fetchProfile(data.user.id);
+          }
+
+          return { error: null };
+        } catch (error) {
+          set({ isLoading: false, loading: false });
+          return { error: error as Error };
+        }
+      },
+
+      signUp: async (
+        email: string,
+        password: string,
+        metadata?: Record<string, unknown>,
+      ) => {
+        set({ isLoading: true, loading: true });
+        try {
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: metadata,
+            },
+          });
+          if (error) throw error;
+          set({
+            user: data.user,
+            session: data.session,
+            isAuthenticated: !!data.session,
+            isLoading: false,
+            loading: false,
+          });
+          return { error: null };
+        } catch (error) {
+          set({ isLoading: false, loading: false });
+          return { error: error as Error };
+        }
+      },
+
+      signOut: async () => {
+        await get().logout();
+      },
     }),
     {
       name: "auth-storage",
@@ -158,8 +299,9 @@ export const useAuthStore = create<AuthState>()(
 );
 
 // ============================================
-// UI Store
+// UI STORE
 // ============================================
+
 interface UIState {
   sidebarOpen: boolean;
   theme: "light" | "dark";
@@ -175,8 +317,9 @@ export const useUIStore = create<UIState>((set) => ({
 }));
 
 // ============================================
-// Exam Store
+// EXAM STORE
 // ============================================
+
 interface ExamState {
   currentExamId: string | null;
   currentAttemptId: string | null;
@@ -233,3 +376,17 @@ export const useExamStore = create<ExamState>((set) => ({
       timeRemaining: 0,
     }),
 }));
+
+// ============================================
+// HELPER HOOKS (for backward compatibility)
+// ============================================
+
+export const useIsAuthenticated = () => {
+  const user = useAuthStore((state) => state.user);
+  return !!user;
+};
+
+export const useUserProfile = () => {
+  const user = useAuthStore((state) => state.user);
+  return user;
+};

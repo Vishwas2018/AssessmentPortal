@@ -1,3 +1,7 @@
+// src/pages/ExamsPage.tsx
+// FIXED: Correct route to /exam/:examId/start
+// ============================================
+
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -10,7 +14,6 @@ import {
   ChevronRight,
   Loader2,
   X,
-  Sparkles,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuthStore } from "@/store";
@@ -225,7 +228,7 @@ export default function ExamsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div className="container-custom">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -233,9 +236,7 @@ export default function ExamsPage() {
           className="mb-8"
         >
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-              <BookOpen className="w-6 h-6 text-white" />
-            </div>
+            <BookOpen className="w-10 h-10 text-indigo-600" />
             <h1 className="text-4xl font-black text-gray-800">
               Browse Exams 📚
             </h1>
@@ -417,8 +418,8 @@ export default function ExamsPage() {
                     </div>
                   </div>
 
-                  {/* Action Button */}
-                  <Link to={`/exam/${exam.id}`}>
+                  {/* Action Button - FIXED: Correct route */}
+                  <Link to={`/exam/${exam.id}/start`}>
                     <motion.button
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}

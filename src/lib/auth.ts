@@ -1,4 +1,7 @@
+// src/lib/auth.ts
 // Authentication service - handles all Supabase auth operations
+// FIXED: Proper OAuth redirect handling for Google sign-in
+
 import { supabase } from "./supabase";
 import type { UserProfile } from "../types/supabase";
 
@@ -40,7 +43,7 @@ export async function signUp(data: SignUpData): Promise<AuthResult> {
           full_name: data.fullName,
           year_level: data.yearLevel,
         },
-        // Redirect after email confirmation (update with your domain later)
+        // Redirect after email confirmation
         emailRedirectTo: `${window.location.origin}/login?verified=true`,
       },
     });
@@ -60,9 +63,6 @@ export async function signUp(data: SignUpData): Promise<AuthResult> {
       };
     }
 
-    // Note: The user profile is auto-created by our database trigger!
-    // But we can update it with additional info if needed
-
     // 2. Update profile with year level if provided
     if (data.yearLevel && authData.user) {
       const { error: profileError } = await supabase
@@ -70,7 +70,7 @@ export async function signUp(data: SignUpData): Promise<AuthResult> {
         .update({
           year_level: data.yearLevel,
           full_name: data.fullName,
-        })
+        } as never)
         .eq("id", authData.user.id);
 
       if (profileError) {
@@ -252,28 +252,53 @@ export async function getUserProfile(
 // SOCIAL AUTH (Google, Microsoft)
 // ============================================
 
+/**
+ * Sign in with Google OAuth
+ *
+ * IMPORTANT: For this to work, you must configure the following:
+ *
+ * 1. In Google Cloud Console (https://console.cloud.google.com):
+ *    - Go to APIs & Services → Credentials
+ *    - Edit your OAuth 2.0 Client ID
+ *    - Add these Authorized redirect URIs:
+ *      - https://YOUR_PROJECT.supabase.co/auth/v1/callback
+ *      - http://localhost:5173 (for local dev)
+ *
+ * 2. In Supabase Dashboard:
+ *    - Go to Authentication → URL Configuration
+ *    - Set Site URL to your production domain
+ *    - Add redirect URLs for all environments
+ */
 export async function signInWithGoogle(): Promise<AuthResult> {
   try {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        // CRITICAL: The redirectTo should be your app URL where users land after auth
+        // Supabase will handle the OAuth callback internally, then redirect here
+        redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: {
+          access_type: "offline",
+          prompt: "consent",
+        },
       },
     });
 
     if (error) {
+      console.error("Google OAuth error:", error);
       return {
         success: false,
         error: getReadableError(error.message),
       };
     }
 
+    // OAuth initiates a redirect, so we won't reach here normally
     return { success: true };
   } catch (err) {
     console.error("Google sign in error:", err);
     return {
       success: false,
-      error: "Failed to sign in with Google.",
+      error: "Failed to sign in with Google. Please try again.",
     };
   }
 }
@@ -283,7 +308,7 @@ export async function signInWithMicrosoft(): Promise<AuthResult> {
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: "azure",
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}/auth/callback`,
         scopes: "email profile",
       },
     });
@@ -326,6 +351,9 @@ function getReadableError(message: string): string {
       "Too many attempts. Please wait a few minutes and try again.",
     "For security purposes, you can only request this once every 60 seconds":
       "Please wait a moment before trying again.",
+    "Invalid Refresh Token: Refresh Token Not Found":
+      "Your session has expired. Please log in again.",
+    redirect_uri_mismatch: "OAuth configuration error. Please contact support.",
   };
 
   return errorMap[message] || message;
