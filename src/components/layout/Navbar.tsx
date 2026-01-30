@@ -1,232 +1,245 @@
-import { useState, useRef, useEffect } from "react";
+// src/components/layout/Navbar.tsx
+// Navigation bar with Pricing link added
+// ============================================
+
+import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen,
-  LayoutDashboard,
+  Home,
   FileText,
   BarChart3,
   User,
   LogOut,
-  ChevronDown,
   Menu,
   X,
-  Settings,
-  Star,
+  ChevronDown,
+  Sparkles,
+  CreditCard,
 } from "lucide-react";
 import { useAuthStore } from "@/store";
 import { ROUTES } from "@/data/constants";
 
 export default function Navbar() {
+  const { user, profile, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, profile, logout } = useAuthStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [profileDropdownOpen, setProfileDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        dropdownRef.current &&
-        !dropdownRef.current.contains(event.target as Node)
-      ) {
-        setProfileDropdownOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  const isAuthenticated = !!user;
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-      navigate(ROUTES.HOME);
-    } catch (error) {
-      console.error("Logout error:", error);
-    }
-  };
-
-  const navLinks = [
-    {
-      path: ROUTES.DASHBOARD,
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      emoji: "🏠",
-    },
-    { path: ROUTES.EXAMS, label: "Exams", icon: FileText, emoji: "📝" },
-    { path: ROUTES.RESULTS, label: "Results", icon: BarChart3, emoji: "📊" },
-  ];
-
-  const isActive = (path: string) => location.pathname === path;
-
-  // Get display name from profile or user metadata
+  // Get display name and initials
   const displayName =
-    profile?.full_name ||
     profile?.display_name ||
-    user?.user_metadata?.full_name ||
+    profile?.full_name?.split(" ")[0] ||
     user?.email?.split("@")[0] ||
     "Student";
 
-  // Get year level
-  const yearLevel =
-    profile?.year_level || user?.user_metadata?.year_level || "";
-
-  // Get initials for avatar
-  const initials = displayName
+  const initials = (profile?.full_name || displayName)
     .split(" ")
     .map((n: string) => n[0])
     .join("")
     .toUpperCase()
     .slice(0, 2);
 
+  const handleLogout = async () => {
+    await logout();
+    navigate(ROUTES.HOME);
+  };
+
+  // Navigation links for authenticated users
+  const navLinks = [
+    { path: ROUTES.DASHBOARD, label: "Dashboard", icon: Home },
+    { path: ROUTES.EXAMS, label: "Exams", icon: FileText },
+    { path: ROUTES.RESULTS, label: "Results", icon: BarChart3 },
+  ];
+
+  // Check if current path matches
+  const isActive = (path: string) => location.pathname === path;
+
   return (
-    <nav className="bg-white/95 backdrop-blur-md shadow-lg border-b-4 border-indigo-400 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center py-3">
+    <nav className="bg-white shadow-md sticky top-0 z-40">
+      <div className="container-custom">
+        <div className="flex items-center justify-between h-16">
           {/* Logo */}
           <Link
-            to={ROUTES.DASHBOARD}
-            className="flex items-center space-x-3 group"
+            to={isAuthenticated ? ROUTES.DASHBOARD : ROUTES.HOME}
+            className="flex items-center gap-2"
           >
-            <motion.div
-              whileHover={{ rotate: [0, -10, 10, 0] }}
-              className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2.5 rounded-xl shadow-lg"
-            >
+            <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 rounded-xl shadow-lg">
               <BookOpen className="h-6 w-6 text-white" />
-            </motion.div>
-            <span className="text-2xl font-black bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+            </div>
+            <span className="text-xl font-black bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
               EduAssess
             </span>
           </Link>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-1">
-            {navLinks.map((link) => (
+          {isAuthenticated ? (
+            <div className="hidden md:flex items-center gap-1">
+              {navLinks.map((link) => {
+                const Icon = link.icon;
+                return (
+                  <Link
+                    key={link.path}
+                    to={link.path}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition ${
+                      isActive(link.path)
+                        ? "bg-indigo-100 text-indigo-700"
+                        : "text-gray-600 hover:bg-gray-100"
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {link.label}
+                  </Link>
+                );
+              })}
+
+              {/* Pricing Link - Premium Badge */}
               <Link
-                key={`nav-link-${link.path}`}
-                to={link.path}
-                className={`flex items-center space-x-2 px-4 py-2.5 rounded-xl font-bold transition-all ${
-                  isActive(link.path)
-                    ? "bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700 shadow-md"
-                    : "text-gray-600 hover:bg-gray-100 hover:text-indigo-600"
+                to={ROUTES.PRICING}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-semibold transition ${
+                  isActive(ROUTES.PRICING)
+                    ? "bg-gradient-to-r from-yellow-400 to-orange-500 text-white"
+                    : "text-yellow-600 hover:bg-yellow-50"
                 }`}
               >
-                <span className="text-lg">{link.emoji}</span>
-                <span>{link.label}</span>
+                <Sparkles className="w-4 h-4" />
+                <span>Pricing</span>
               </Link>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="hidden md:flex items-center gap-4">
+              {/* Public navigation links */}
+              <Link
+                to={ROUTES.PRICING}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl font-semibold text-gray-600 hover:bg-gray-100 transition"
+              >
+                <CreditCard className="w-4 h-4" />
+                Pricing
+              </Link>
+            </div>
+          )}
 
-          {/* Profile Dropdown */}
-          <div className="hidden md:block relative" ref={dropdownRef}>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-              className="flex items-center space-x-3 px-3 py-2 rounded-xl hover:bg-gray-100 transition-all border-2 border-transparent hover:border-indigo-200"
-            >
-              {/* Avatar */}
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-md text-sm">
-                {profile?.avatar_url ? (
-                  <img
-                    src={profile.avatar_url}
-                    alt={displayName}
-                    className="w-full h-full rounded-full object-cover"
-                  />
-                ) : (
-                  initials
-                )}
-              </div>
-              <div className="text-left">
-                <p className="font-bold text-gray-800 text-sm">{displayName}</p>
-                {yearLevel && (
-                  <p className="text-xs text-indigo-500 font-medium">
-                    Year {yearLevel}
-                  </p>
-                )}
-              </div>
-              <ChevronDown
-                className={`w-4 h-4 text-gray-400 transition-transform ${
-                  profileDropdownOpen ? "rotate-180" : ""
-                }`}
-              />
-            </motion.button>
+          {/* Right Side */}
+          <div className="flex items-center gap-3">
+            {isAuthenticated ? (
+              <>
+                {/* Profile Dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
+                    className="flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-gray-100 transition"
+                  >
+                    <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                      {initials}
+                    </div>
+                    <div className="hidden sm:block text-left">
+                      <p className="font-bold text-gray-800 text-sm">
+                        {displayName}
+                      </p>
+                      {profile?.year_level && (
+                        <p className="text-xs text-gray-500">
+                          Year {profile.year_level}
+                        </p>
+                      )}
+                    </div>
+                    <ChevronDown
+                      className={`w-4 h-4 text-gray-400 transition ${profileDropdownOpen ? "rotate-180" : ""}`}
+                    />
+                  </button>
 
-            {/* Dropdown Menu */}
-            <AnimatePresence>
-              {profileDropdownOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border-2 border-gray-100 py-2 overflow-hidden"
-                >
-                  <div className="px-4 py-3 border-b border-gray-100">
-                    <p className="font-bold text-gray-800">{displayName}</p>
-                    <p className="text-sm text-gray-500 truncate">
-                      {user?.email}
-                    </p>
-                  </div>
+                  {/* Dropdown Menu */}
+                  <AnimatePresence>
+                    {profileDropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 10 }}
+                        className="absolute right-0 top-full mt-2 w-56 bg-white rounded-2xl shadow-xl border py-2 z-50"
+                      >
+                        <div className="px-4 py-3 border-b">
+                          <p className="font-bold text-gray-800">
+                            {displayName}
+                          </p>
+                          <p className="text-sm text-gray-500 truncate">
+                            {user?.email}
+                          </p>
+                        </div>
 
-                  <div className="py-1">
-                    <Link
-                      key="dropdown-profile"
-                      to={ROUTES.PROFILE}
-                      onClick={() => setProfileDropdownOpen(false)}
-                      className="flex items-center space-x-3 px-4 py-2.5 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                    >
-                      <User className="w-4 h-4" />
-                      <span className="font-medium">My Profile</span>
-                    </Link>
-                    <Link
-                      key="dropdown-achievements"
-                      to={ROUTES.DASHBOARD}
-                      onClick={() => setProfileDropdownOpen(false)}
-                      className="flex items-center space-x-3 px-4 py-2.5 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                    >
-                      <Star className="w-4 h-4" />
-                      <span className="font-medium">Achievements</span>
-                    </Link>
-                    <Link
-                      key="dropdown-settings"
-                      to={ROUTES.PROFILE}
-                      onClick={() => setProfileDropdownOpen(false)}
-                      className="flex items-center space-x-3 px-4 py-2.5 text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                    >
-                      <Settings className="w-4 h-4" />
-                      <span className="font-medium">Settings</span>
-                    </Link>
-                  </div>
+                        <Link
+                          to={ROUTES.PROFILE}
+                          onClick={() => setProfileDropdownOpen(false)}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition"
+                        >
+                          <User className="w-5 h-5 text-gray-400" />
+                          <span className="font-medium text-gray-700">
+                            My Profile
+                          </span>
+                        </Link>
 
-                  <div className="border-t border-gray-100 pt-1">
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center space-x-3 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors w-full"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      <span className="font-medium">Log Out</span>
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+                        <Link
+                          to={ROUTES.PRICING}
+                          onClick={() => setProfileDropdownOpen(false)}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition"
+                        >
+                          <Sparkles className="w-5 h-5 text-yellow-500" />
+                          <span className="font-medium text-gray-700">
+                            Upgrade to Premium
+                          </span>
+                        </Link>
 
-          {/* Mobile Menu Button */}
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="md:hidden p-2 rounded-xl hover:bg-gray-100 transition-colors"
-          >
-            {mobileMenuOpen ? (
-              <X className="h-6 w-6 text-gray-600" />
+                        <div className="border-t my-2" />
+
+                        <button
+                          onClick={() => {
+                            setProfileDropdownOpen(false);
+                            handleLogout();
+                          }}
+                          className="flex items-center gap-3 px-4 py-3 hover:bg-red-50 transition w-full text-left"
+                        >
+                          <LogOut className="w-5 h-5 text-red-400" />
+                          <span className="font-medium text-red-600">
+                            Log Out
+                          </span>
+                        </button>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </>
             ) : (
-              <Menu className="h-6 w-6 text-gray-600" />
+              <>
+                {/* Login/Register buttons */}
+                <Link
+                  to={ROUTES.LOGIN}
+                  className="px-4 py-2 font-semibold text-gray-600 hover:text-indigo-600 transition"
+                >
+                  Log In
+                </Link>
+                <Link
+                  to={ROUTES.REGISTER}
+                  className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold rounded-xl hover:shadow-lg transition"
+                >
+                  Sign Up Free
+                </Link>
+              </>
             )}
-          </motion.button>
+
+            {/* Mobile Menu Button */}
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="md:hidden p-2 rounded-xl hover:bg-gray-100 transition"
+            >
+              {mobileMenuOpen ? (
+                <X className="w-6 h-6 text-gray-600" />
+              ) : (
+                <Menu className="w-6 h-6 text-gray-600" />
+              )}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Menu */}
@@ -236,51 +249,103 @@ export default function Navbar() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="md:hidden border-t border-gray-100 py-4"
+              className="md:hidden border-t"
             >
-              <div className="space-y-2">
-                {navLinks.map((link) => (
-                  <Link
-                    key={`mobile-nav-${link.path}`}
-                    to={link.path}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className={`flex items-center space-x-3 px-4 py-3 rounded-xl font-bold transition-all ${
-                      isActive(link.path)
-                        ? "bg-gradient-to-r from-indigo-100 to-purple-100 text-indigo-700"
-                        : "text-gray-600 hover:bg-gray-100"
-                    }`}
-                  >
-                    <span className="text-xl">{link.emoji}</span>
-                    <span>{link.label}</span>
-                  </Link>
-                ))}
+              <div className="py-4 space-y-2">
+                {isAuthenticated ? (
+                  <>
+                    {navLinks.map((link) => {
+                      const Icon = link.icon;
+                      return (
+                        <Link
+                          key={link.path}
+                          to={link.path}
+                          onClick={() => setMobileMenuOpen(false)}
+                          className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition ${
+                            isActive(link.path)
+                              ? "bg-indigo-100 text-indigo-700"
+                              : "text-gray-600 hover:bg-gray-100"
+                          }`}
+                        >
+                          <Icon className="w-5 h-5" />
+                          {link.label}
+                        </Link>
+                      );
+                    })}
 
-                <div className="border-t border-gray-100 pt-4 mt-4">
-                  <Link
-                    key="mobile-profile"
-                    to={ROUTES.PROFILE}
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="flex items-center space-x-3 px-4 py-3 rounded-xl text-gray-600 hover:bg-gray-100 font-bold"
-                  >
-                    <User className="w-5 h-5" />
-                    <span>My Profile</span>
-                  </Link>
-                  <button
-                    onClick={() => {
-                      setMobileMenuOpen(false);
-                      handleLogout();
-                    }}
-                    className="flex items-center space-x-3 px-4 py-3 rounded-xl text-red-600 hover:bg-red-50 font-bold w-full"
-                  >
-                    <LogOut className="w-5 h-5" />
-                    <span>Log Out</span>
-                  </button>
-                </div>
+                    {/* Mobile Pricing Link */}
+                    <Link
+                      to={ROUTES.PRICING}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl font-semibold transition ${
+                        isActive(ROUTES.PRICING)
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "text-yellow-600 hover:bg-yellow-50"
+                      }`}
+                    >
+                      <Sparkles className="w-5 h-5" />
+                      Pricing
+                    </Link>
+
+                    <Link
+                      to={ROUTES.PROFILE}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-gray-600 hover:bg-gray-100 transition"
+                    >
+                      <User className="w-5 h-5" />
+                      My Profile
+                    </Link>
+
+                    <button
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        handleLogout();
+                      }}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-red-600 hover:bg-red-50 transition w-full text-left"
+                    >
+                      <LogOut className="w-5 h-5" />
+                      Log Out
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      to={ROUTES.PRICING}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-gray-600 hover:bg-gray-100 transition"
+                    >
+                      <CreditCard className="w-5 h-5" />
+                      Pricing
+                    </Link>
+                    <Link
+                      to={ROUTES.LOGIN}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold text-gray-600 hover:bg-gray-100 transition"
+                    >
+                      Log In
+                    </Link>
+                    <Link
+                      to={ROUTES.REGISTER}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl font-semibold bg-gradient-to-r from-indigo-500 to-purple-600 text-white transition"
+                    >
+                      Sign Up Free
+                    </Link>
+                  </>
+                )}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
+
+      {/* Click outside to close dropdown */}
+      {profileDropdownOpen && (
+        <div
+          className="fixed inset-0 z-30"
+          onClick={() => setProfileDropdownOpen(false)}
+        />
+      )}
     </nav>
   );
 }

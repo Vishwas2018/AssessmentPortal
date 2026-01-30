@@ -19,7 +19,7 @@ import {
   Shield,
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
-import { useAuthStore } from "../store/authStore";
+import { useAuthStore } from "../store/authstore";
 
 interface Question {
   id: string;
@@ -208,8 +208,8 @@ export default function TakeExamPage() {
         .update({
           answers: answers,
           flagged: Array.from(flagged),
-        })
-        .eq("id", attemptId);
+        } as never)
+        .eq("id", attemptId!);
 
       if (error) {
         console.error("Save error:", error);
@@ -394,8 +394,8 @@ export default function TakeExamPage() {
           score: score,
           completed_at: new Date().toISOString(),
           status: "completed",
-        })
-        .eq("id", attemptId);
+        } as never)
+        .eq("id", attemptId!);
 
       if (error) {
         console.error("Submit error:", error);

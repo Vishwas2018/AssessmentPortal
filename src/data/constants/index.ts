@@ -1,4 +1,5 @@
-// Application constants
+// src/data/constants/index.ts
+// Application constants with PRICING route added
 // ============================================
 
 // ============================================

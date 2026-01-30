@@ -103,7 +103,7 @@ export default function ProfilePage() {
           year_level: data.yearLevel,
           school_name: data.schoolName,
           parent_email: data.parentEmail || null,
-        })
+        } as never)
         .eq("id", user.id);
 
       if (error) {
