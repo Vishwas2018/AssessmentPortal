@@ -1,15 +1,10 @@
 // Supabase Edge Function: create-portal-session
 // Deploy with: supabase functions deploy create-portal-session
-// ============================================
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import Stripe from "https://esm.sh/stripe@13.10.0?target=deno";
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") || "", {
-  apiVersion: "2023-10-16",
-  httpClient: Stripe.createFetchHttpClient(),
-});
+const stripeBaseUrl = "https://api.stripe.com/v1";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,13 +13,13 @@ const corsHeaders = {
 };
 
 serve(async (req: Request) => {
-  // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const { userId, returnUrl } = await req.json();
+    const body = await req.json();
+    const { userId, returnUrl } = body;
 
     if (!userId) {
       return new Response(JSON.stringify({ error: "Missing user ID" }), {
@@ -33,19 +28,29 @@ serve(async (req: Request) => {
       });
     }
 
-    // Initialize Supabase client
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const stripeKey = Deno.env.get("STRIPE_SECRET_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+
+    if (!stripeKey || !supabaseUrl || !supabaseServiceKey) {
+      return new Response(
+        JSON.stringify({ error: "Missing environment variables" }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        },
+      );
+    }
+
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get user's Stripe customer ID
-    const { data: subscription, error } = await supabase
+    const { data: subscription } = await supabase
       .from("user_subscriptions")
       .select("stripe_customer_id")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
-    if (error || !subscription?.stripe_customer_id) {
+    if (!subscription?.stripe_customer_id) {
       return new Response(
         JSON.stringify({ error: "No subscription found for user" }),
         {
@@ -55,24 +60,34 @@ serve(async (req: Request) => {
       );
     }
 
-    // Create Stripe Customer Portal session
-    const session = await stripe.billingPortal.sessions.create({
-      customer: subscription.stripe_customer_id,
-      return_url: returnUrl || `${req.headers.get("origin")}/profile`,
+    const portalRes = await fetch(`${stripeBaseUrl}/billing_portal/sessions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${stripeKey}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        customer: subscription.stripe_customer_id,
+        return_url: returnUrl || `${req.headers.get("origin")}/profile`,
+      }),
     });
+
+    const session = await portalRes.json();
+
+    if (!session.url) {
+      throw new Error("Stripe portal URL was not returned");
+    }
 
     return new Response(JSON.stringify({ url: session.url }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
-    console.error("Error creating portal session:", error);
-    return new Response(
-      JSON.stringify({ error: error.message || "Internal server error" }),
-      {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
+    return new Response(JSON.stringify({ error: message }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
   }
 });
