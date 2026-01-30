@@ -227,11 +227,11 @@ const TableBlockRenderer: React.FC<{ block: TableBlock }> = ({ block }) => {
     none: "bg-white text-gray-800",
   }[block.headerStyle || "blue"];
 
-  const renderCell = (cell: string | number | TallyData) => {
-    if (typeof cell === "object" && cell.type === "tally") {
-      return <TallyMarks count={cell.count} />;
+  const renderCell = (cell: string | number | TallyData): React.ReactNode => {
+    if (typeof cell === "object" && (cell as TallyData).type === "tally") {
+      return <TallyMarks count={(cell as TallyData).count} />;
     }
-    return cell;
+    return cell as React.ReactNode;
   };
 
   return (

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "@/store";
 import { ROUTES } from "@/data/constants";
-import { formatDate, formatTime } from "@/utils/helpers";
+import { formatDate } from "@/utils/helpers";
 import {
   fetchDashboardData,
   type DashboardData,

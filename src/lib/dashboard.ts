@@ -1,5 +1,6 @@
 // Dashboard service - fetches real user statistics from Supabase
 import { supabase } from "./supabase";
+import { ExamAttempt } from "../types/supabase";
 
 // ============================================
 // TYPES
@@ -77,8 +78,13 @@ export async function fetchDashboardStats(
       return getEmptyStats();
     }
 
+    // Explicitly type attempts as any[] to avoid TS 'never' error
+    const typedAttempts = attempts as ExamAttempt[];
+
     // Filter completed attempts
-    const completedAttempts = attempts.filter((a) => a.status === "completed");
+    const completedAttempts = typedAttempts.filter(
+      (a) => a.status === "completed",
+    );
 
     // Calculate total exams taken (all attempts)
     const totalExamsTaken = attempts.length;
@@ -164,9 +170,10 @@ export async function fetchRecentAttempts(
     }
 
     // Transform the data to match our type
-    return (attempts || []).map((attempt) => ({
+    const typedAttempts = (attempts || []) as RecentAttemptWithExam[];
+    return typedAttempts.map((attempt) => ({
       ...attempt,
-      exam: attempt.exam as RecentAttemptWithExam["exam"],
+      exam: attempt.exam,
     }));
   } catch (err) {
     console.error("Error in fetchRecentAttempts:", err);
@@ -199,7 +206,12 @@ export async function fetchTopicPerformance(
     }
 
     // Calculate performance by subject
-    const subjectPerformance = progress.map((p) => ({
+    const typedProgress = progress as Array<{
+      subject: string;
+      total_questions_answered: number;
+      correct_answers: number;
+    }>;
+    const subjectPerformance = typedProgress.map((p) => ({
       subject: p.subject,
       percentage:
         p.total_questions_answered > 0
@@ -270,7 +282,9 @@ export async function fetchProfileStats(userId: string): Promise<ProfileStats> {
       return getEmptyProfileStats();
     }
 
-    const completedAttempts = attempts.filter((a) => a.status === "completed");
+    const completedAttempts = (
+      attempts as Array<ExamAttempt & { exam: { subject: string } }>
+    ).filter((a) => a.status === "completed");
 
     // Calculate basic stats
     const examsTaken = attempts.length;
@@ -305,7 +319,7 @@ export async function fetchProfileStats(userId: string): Promise<ProfileStats> {
     >();
 
     completedAttempts.forEach((attempt) => {
-      const subject = (attempt.exam as { subject: string })?.subject;
+      const subject = attempt.exam.subject;
       if (subject) {
         const existing = subjectMap.get(subject) || {
           count: 0,
@@ -463,8 +477,12 @@ async function deriveTopicsFromAttempts(
     // Group by subject
     const subjectScores: Record<string, number[]> = {};
 
-    attempts.forEach((attempt) => {
-      const subject = (attempt.exam as { subject?: string })?.subject;
+    const typedAttempts = attempts as Array<{
+      percentage: number | null;
+      exam: { subject?: string };
+    }>;
+    typedAttempts.forEach((attempt) => {
+      const subject = attempt.exam?.subject;
       if (subject && attempt.percentage !== null) {
         if (!subjectScores[subject]) {
           subjectScores[subject] = [];
@@ -536,11 +554,14 @@ export async function updateUserProgress(
 ): Promise<void> {
   try {
     // First, get the exam to know the subject and type
-    const { data: exam, error: examError } = await supabase
+    const { data: exam, error: examError } = (await supabase
       .from("exams")
       .select("subject, exam_type")
       .eq("id", examId)
-      .single();
+      .single()) as {
+      data: { subject: string; exam_type: string } | null;
+      error: any;
+    };
 
     if (examError || !exam) {
       console.error("Error fetching exam for progress update:", examError);
@@ -548,13 +569,23 @@ export async function updateUserProgress(
     }
 
     // Check if user progress exists for this subject/type combo
-    const { data: existingProgress, error: progressError } = await supabase
+    const { data: existingProgress, error: progressError } = (await supabase
       .from("user_progress")
       .select("*")
       .eq("user_id", userId)
       .eq("subject", exam.subject)
       .eq("exam_type", exam.exam_type)
-      .single();
+      .single()) as {
+      data: {
+        id: string;
+        total_attempts: number;
+        total_questions_answered: number;
+        correct_answers: number;
+        best_score: number | null;
+        total_time_spent_seconds: number;
+      } | null;
+      error: any;
+    };
 
     if (progressError && progressError.code !== "PGRST116") {
       // PGRST116 = no rows found, which is OK
@@ -590,7 +621,7 @@ export async function updateUserProgress(
           best_score: newBestScore,
           total_time_spent_seconds: newTotalTime,
           last_activity_at: new Date().toISOString(),
-        })
+        } as never)
         .eq("id", existingProgress.id);
     } else {
       // Create new progress entry
@@ -605,7 +636,7 @@ export async function updateUserProgress(
         best_score: percentage,
         total_time_spent_seconds: timeSpent,
         last_activity_at: new Date().toISOString(),
-      });
+      } as never);
     }
   } catch (err) {
     console.error("Error updating user progress:", err);

@@ -73,8 +73,16 @@ export default function RootLayout() {
               ROUTES.REGISTER,
               ROUTES.FORGOT_PASSWORD,
             ];
-            if (publicPaths.includes(location.pathname)) {
-              navigate(ROUTES.DASHBOARD, { replace: true });
+            if (
+              publicPaths.includes(
+                location.pathname as
+                  | typeof ROUTES.HOME
+                  | typeof ROUTES.LOGIN
+                  | typeof ROUTES.REGISTER
+                  | typeof ROUTES.FORGOT_PASSWORD,
+              )
+            ) {
+              navigate(ROUTES.DASHBOARD as any, { replace: true });
             }
           }
         } else {
@@ -84,7 +92,7 @@ export default function RootLayout() {
 
           // Redirect to home after logout
           if (event === "SIGNED_OUT") {
-            navigate(ROUTES.HOME, { replace: true });
+            navigate(ROUTES.HOME as any, { replace: true });
           }
         }
       }

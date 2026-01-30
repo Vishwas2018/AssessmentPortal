@@ -49,7 +49,9 @@ export default function SupabaseDiagnostic() {
 
       // Test 1: Check connection
       try {
-        const { data, error } = await supabase.from("exams").select("count");
+        const { data: _data, error } = await supabase
+          .from("exams")
+          .select("count");
         if (error) {
           results.connection = `Error: ${error.message}`;
           results.rawError = error;
@@ -62,9 +64,11 @@ export default function SupabaseDiagnostic() {
 
       // Test 2: Count all exams (without is_active filter)
       try {
-        const { data, error, count } = await supabase
-          .from("exams")
-          .select("*", { count: "exact" });
+        const {
+          data,
+          error,
+          count: _count,
+        } = await supabase.from("exams").select("*", { count: "exact" });
 
         if (error) {
           results.examsError = error.message;

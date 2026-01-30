@@ -2,7 +2,7 @@
 // Read Aloud button with TTS and optional pre-recorded audio support
 
 import React, { useState, useEffect, useRef } from "react";
-import { Volume2, VolumeX, Pause, Play, Square } from "lucide-react";
+import { Volume2, Pause, Play, Square } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   speak,

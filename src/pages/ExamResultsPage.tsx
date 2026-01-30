@@ -119,7 +119,6 @@ const NATIONAL_AVERAGES: Record<number, number> = {
 
 export default function ExamResultsPage() {
   const { examId, attemptId } = useParams();
-  const navigate = useNavigate();
 
   const [exam, setExam] = useState<Exam | null>(null);
   const [attempt, setAttempt] = useState<ExamAttempt | null>(null);
@@ -135,7 +134,11 @@ export default function ExamResultsPage() {
       if (!examId || !attemptId) return;
 
       try {
-        const [examRes, attemptRes, questionsRes] = await Promise.all([
+        const [examRes, attemptRes, questionsRes]: [
+          { data: Exam | null; error: any },
+          { data: ExamAttempt | null; error: any },
+          { data: Question[] | null; error: any }
+        ] = await Promise.all([
           supabase.from("exams").select("*").eq("id", examId).single(),
           supabase
             .from("exam_attempts")
@@ -149,9 +152,9 @@ export default function ExamResultsPage() {
             .order("question_number"),
         ]);
 
-        if (examRes.data) setExam(examRes.data);
-        if (attemptRes.data) setAttempt(attemptRes.data);
-        if (questionsRes.data) setQuestions(questionsRes.data);
+        if (examRes.data) setExam(examRes.data as Exam);
+        if (attemptRes.data) setAttempt(attemptRes.data as ExamAttempt);
+        if (questionsRes.data) setQuestions(questionsRes.data as Question[]);
       } catch (error) {
         console.error("Error fetching results:", error);
       } finally {

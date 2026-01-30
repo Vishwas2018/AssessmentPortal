@@ -6,7 +6,6 @@ import {
   Sparkles,
   ArrowRight,
   Zap,
-  Star,
   BookOpen,
   TrendingUp,
 } from "lucide-react";

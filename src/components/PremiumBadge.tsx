@@ -34,9 +34,9 @@ export default function PremiumBadge({
 
   return (
     <motion.div
-      initial={animate ? { scale: 0 } : false}
-      animate={animate ? { scale: 1 } : false}
-      whileHover={animate ? { scale: 1.05 } : false}
+      initial={animate ? { scale: 0 } : undefined}
+      animate={animate ? { scale: 1 } : undefined}
+      whileHover={animate ? { scale: 1.05 } : undefined}
       className={`
         inline-flex items-center space-x-1.5 rounded-full font-bold
         ${sizeClasses[size]}
@@ -55,7 +55,7 @@ export default function PremiumBadge({
             ? {
                 rotate: [0, -10, 10, 0],
               }
-            : false
+            : undefined
         }
         transition={{
           duration: 0.5,

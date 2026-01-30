@@ -172,7 +172,7 @@ export async function checkExamAccess(
       .from("exams")
       .select("is_free")
       .eq("id", examId)
-      .single();
+      .single<{ is_free: boolean }>();
 
     if (error) {
       console.error("Error checking exam access:", error);

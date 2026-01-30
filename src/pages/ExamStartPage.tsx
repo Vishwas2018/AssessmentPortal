@@ -19,6 +19,19 @@ import { useAuthStore } from "@/store";
 import { ROUTES } from "@/data/constants";
 import type { Exam } from "@/types/supabase";
 
+interface ExamAttempt {
+  id?: string;
+  user_id: string;
+  exam_id: string;
+  status: string;
+  started_at: string;
+  answers: Record<string, unknown>;
+  score: number | null;
+  total_points: number;
+  percentage: number | null;
+  time_spent_seconds: number | null;
+}
+
 export default function ExamStartPage() {
   const { examId } = useParams<{ examId: string }>();
   const navigate = useNavigate();
@@ -89,21 +102,23 @@ export default function ExamStartPage() {
       console.log("Creating exam attempt for user:", user.id, "exam:", examId);
 
       // Create exam attempt
-      const { data: attempt, error: attemptError } = await supabase
+      const attemptData: ExamAttempt = {
+        user_id: user.id,
+        exam_id: examId,
+        status: "in_progress",
+        started_at: new Date().toISOString(),
+        answers: {},
+        score: null,
+        total_points: exam.total_questions,
+        percentage: null,
+        time_spent_seconds: null,
+      };
+
+      const { data: attempt, error: attemptError } = (await supabase
         .from("exam_attempts")
-        .insert({
-          user_id: user.id,
-          exam_id: examId,
-          status: "in_progress",
-          started_at: new Date().toISOString(),
-          answers: {},
-          score: null,
-          total_points: exam.total_questions,
-          percentage: null,
-          time_spent_seconds: null,
-        })
+        .insert([attemptData] as any)
         .select()
-        .single();
+        .single()) as { data: ExamAttempt | null; error: any };
 
       if (attemptError) {
         console.error("Error creating attempt:", attemptError);

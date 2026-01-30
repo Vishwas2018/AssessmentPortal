@@ -130,7 +130,8 @@ export default function ExamPage() {
           return;
         }
 
-        setExam(examData);
+        const typedExamData = examData as Exam;
+        setExam(typedExamData);
 
         // Fetch questions
         const { data: questionsData, error: questionsError } = await supabase
@@ -146,7 +147,7 @@ export default function ExamPage() {
         }
 
         // Parse options if needed
-        const parsedQuestions = (questionsData || []).map((q) => ({
+        const parsedQuestions = (questionsData || []).map((q: any) => ({
           ...q,
           options:
             typeof q.options === "string" ? JSON.parse(q.options) : q.options,
@@ -168,30 +169,32 @@ export default function ExamPage() {
           return;
         }
 
+        const typedAttemptData = attemptData as ExamAttempt;
+
         // Check if already completed
-        if (attemptData.status === "completed") {
+        if (typedAttemptData.status === "completed") {
           navigate(`/exam/${examId}/results/${attemptId}`, { replace: true });
           return;
         }
 
-        setAttempt(attemptData);
+        setAttempt(typedAttemptData);
 
         // Restore saved answers
-        if (attemptData.answers) {
-          setAnswers(attemptData.answers);
-          lastSavedAnswersRef.current = JSON.stringify(attemptData.answers);
+        if (typedAttemptData.answers) {
+          setAnswers(typedAttemptData.answers);
+          lastSavedAnswersRef.current = JSON.stringify(typedAttemptData.answers);
         }
 
         // Restore flagged questions from database
-        if (attemptData.flagged && Array.isArray(attemptData.flagged)) {
-          setFlaggedQuestions(new Set(attemptData.flagged));
+        if (typedAttemptData.flagged && Array.isArray(typedAttemptData.flagged)) {
+          setFlaggedQuestions(new Set(typedAttemptData.flagged));
         }
 
         // Calculate remaining time
-        const startTime = new Date(attemptData.started_at).getTime();
+        const startTime = new Date(typedAttemptData.started_at).getTime();
         const now = Date.now();
         const elapsedSeconds = Math.floor((now - startTime) / 1000);
-        const totalSeconds = examData.duration_minutes * 60;
+        const totalSeconds = typedExamData.duration_minutes * 60;
         const remaining = Math.max(0, totalSeconds - elapsedSeconds);
 
         setTimeRemaining(remaining);
@@ -250,7 +253,7 @@ export default function ExamPage() {
           .update({
             answers: currentAnswers,
             flagged: Array.from(currentFlagged),
-          })
+          } as never)
           .eq("id", attemptId)
           .eq("user_id", user.id);
 
@@ -363,7 +366,7 @@ export default function ExamPage() {
           total_points: totalPoints,
           percentage: percentage,
           time_spent_seconds: timeSpentSeconds,
-        })
+        } as never)
         .eq("id", attemptId)
         .eq("user_id", user.id);
 
